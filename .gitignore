@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.pytest_cache/
+
+# Virtual env
+.venv/
+venv/
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+.runtime_tokens
+AGENTS.md
+
+# Runtime data
+logs/
+runtime/
+*.log
+*.pid
+
+# Local backup files
+*.bak
+*.tmp
+*.local
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
