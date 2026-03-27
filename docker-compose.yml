@@ -13,8 +13,12 @@ services:
       - ${KIMI_HOME_DIR:-./runtime/kimi-home}:/root/.kimi
     networks:
       - gateway_shared
+      - gateway_db
 
 networks:
   gateway_shared:
     external: true
     name: ${GATEWAY_DOCKER_NETWORK:-gateway_shared_net}
+  gateway_db:
+    external: true
+    name: ${DB_DOCKER_NETWORK:-gateway_shared_net}

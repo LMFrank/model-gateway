@@ -14,7 +14,7 @@ from app.adapters import KimiCliAdapter, QwenApiAdapter
 from app.adapters.base import AdapterError
 from app.auth import require_admin_auth, require_client_auth
 from app.config import get_settings
-from app.repository import MySQLRepository
+from app.repository import PostgresRepository
 from app.router_engine import RouteNotFoundError, RouterEngine
 from app.schemas import ProviderConfigsUpsertRequest, RouteRulesUpsertRequest
 
@@ -57,7 +57,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="Model Gateway", version="0.1.0")
 
-    repository = MySQLRepository(settings)
+    repository = PostgresRepository(settings)
     router_engine = RouterEngine()
     adapter_registry = {
         "kimi_cli": KimiCliAdapter(settings),

@@ -2,10 +2,10 @@ import socket
 import threading
 import os
 
-LISTEN_HOST = '0.0.0.0'
-LISTEN_PORT = int(os.getenv("MYSQL_PROXY_LISTEN_PORT", "13306"))
-TARGET_HOST = os.getenv("MYSQL_PROXY_TARGET_HOST", "mysql")
-TARGET_PORT = int(os.getenv("MYSQL_PROXY_TARGET_PORT", "3306"))
+LISTEN_HOST = os.getenv("TCP_PROXY_LISTEN_HOST", "0.0.0.0")
+LISTEN_PORT = int(os.getenv("TCP_PROXY_LISTEN_PORT", "15432"))
+TARGET_HOST = os.getenv("TCP_PROXY_TARGET_HOST", "pg")
+TARGET_PORT = int(os.getenv("TCP_PROXY_TARGET_PORT", "5432"))
 
 
 def pipe(src: socket.socket, dst: socket.socket):
@@ -42,10 +42,7 @@ def main():
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind((LISTEN_HOST, LISTEN_PORT))
     listener.listen(128)
-    print(
-        f'mysql-proxy listening on {LISTEN_HOST}:{LISTEN_PORT} -> {TARGET_HOST}:{TARGET_PORT}',
-        flush=True,
-    )
+    print(f'tcp-proxy listening on {LISTEN_HOST}:{LISTEN_PORT} -> {TARGET_HOST}:{TARGET_PORT}', flush=True)
 
     while True:
         client, _ = listener.accept()

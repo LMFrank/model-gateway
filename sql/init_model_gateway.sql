@@ -1,58 +1,68 @@
--- 在任意 MySQL 8.0+ 实例中执行：
--- mysql -h <mysql-host> -u <admin-user> -p < sql/init_model_gateway.sql
+-- 在 PostgreSQL 14+ 实例中通过 psql 执行：
+-- psql -h <pg-host> -U <pg-admin-user> -d postgres -v mgw_db_password='CHANGE_ME_STRONG_PASSWORD' -f sql/init_model_gateway.sql
 
-CREATE DATABASE IF NOT EXISTS model_gateway CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+\set ON_ERROR_STOP on
 
-CREATE USER IF NOT EXISTS 'model_gateway_user'@'%' IDENTIFIED BY 'CHANGE_ME_STRONG_PASSWORD';
-GRANT ALL PRIVILEGES ON model_gateway.* TO 'model_gateway_user'@'%';
-FLUSH PRIVILEGES;
+SELECT format('CREATE ROLE model_gateway_user LOGIN PASSWORD %L', :'mgw_db_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'model_gateway_user')
+\gexec
 
-USE model_gateway;
+SELECT 'CREATE DATABASE model_gateway OWNER model_gateway_user'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'model_gateway')
+\gexec
+
+\connect model_gateway
+
+GRANT ALL PRIVILEGES ON DATABASE model_gateway TO model_gateway_user;
+GRANT USAGE, CREATE ON SCHEMA public TO model_gateway_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO model_gateway_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO model_gateway_user;
 
 CREATE TABLE IF NOT EXISTS route_rules (
-  model_name VARCHAR(128) NOT NULL PRIMARY KEY,
+  model_name VARCHAR(128) PRIMARY KEY,
   primary_provider VARCHAR(64) NOT NULL,
-  fallback_provider VARCHAR(64) NULL,
-  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
-  description VARCHAR(255) NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  fallback_provider VARCHAR(64),
+  is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  description VARCHAR(255),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 CREATE TABLE IF NOT EXISTS provider_configs (
-  provider_name VARCHAR(64) NOT NULL PRIMARY KEY,
-  config_json JSON NOT NULL,
-  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  provider_name VARCHAR(64) PRIMARY KEY,
+  config_json JSONB NOT NULL,
+  is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 CREATE TABLE IF NOT EXISTS call_logs (
-  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  id BIGSERIAL PRIMARY KEY,
   request_id VARCHAR(64) NOT NULL,
-  task_id VARCHAR(64) NULL,
-  stock_code VARCHAR(32) NULL,
+  task_id VARCHAR(64),
+  stock_code VARCHAR(32),
   model_name VARCHAR(128) NOT NULL,
-  primary_provider VARCHAR(64) NULL,
-  fallback_provider VARCHAR(64) NULL,
-  route_chain JSON NULL,
-  selected_provider VARCHAR(64) NULL,
+  primary_provider VARCHAR(64),
+  fallback_provider VARCHAR(64),
+  route_chain JSONB,
+  selected_provider VARCHAR(64),
   status VARCHAR(16) NOT NULL,
-  http_status INT NULL,
-  error_message VARCHAR(2000) NULL,
-  prompt_tokens INT NULL,
-  completion_tokens INT NULL,
-  total_tokens INT NULL,
-  latency_ms INT NULL,
-  is_stream TINYINT(1) NOT NULL DEFAULT 0,
-  request_body JSON NULL,
-  response_body JSON NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  KEY idx_created_at (created_at),
-  KEY idx_model_name (model_name),
-  KEY idx_status (status),
-  KEY idx_task_stock (task_id, stock_code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  http_status INT,
+  error_message VARCHAR(2000),
+  prompt_tokens INT,
+  completion_tokens INT,
+  total_tokens INT,
+  latency_ms INT,
+  is_stream BOOLEAN NOT NULL DEFAULT FALSE,
+  request_body JSONB,
+  response_body JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_call_logs_created_at ON call_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_call_logs_model_name ON call_logs (model_name);
+CREATE INDEX IF NOT EXISTS idx_call_logs_status ON call_logs (status);
+CREATE INDEX IF NOT EXISTS idx_call_logs_task_stock ON call_logs (task_id, stock_code);
 
 CREATE TABLE IF NOT EXISTS daily_usage_agg (
   stat_date DATE NOT NULL,
@@ -61,40 +71,50 @@ CREATE TABLE IF NOT EXISTS daily_usage_agg (
   call_count INT NOT NULL DEFAULT 0,
   failed_count INT NOT NULL DEFAULT 0,
   total_tokens BIGINT NOT NULL DEFAULT 0,
-  p95_latency_ms INT NULL,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  p95_latency_ms INT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (stat_date, provider_name, model_name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- 示例路由规则
 INSERT INTO route_rules (model_name, primary_provider, fallback_provider, is_enabled, description)
 VALUES
-  ('kimi-for-coding', 'kimi_cli', 'qwen_api', 1, 'Kimi 主通道, Qwen 回退'),
-  ('qwen3.5-plus', 'qwen_api', NULL, 1, 'Qwen 直连')
-ON DUPLICATE KEY UPDATE
-  primary_provider = VALUES(primary_provider),
-  fallback_provider = VALUES(fallback_provider),
-  is_enabled = VALUES(is_enabled),
-  description = VALUES(description);
+  ('kimi-for-coding', 'kimi_cli', 'qwen_api', TRUE, 'Kimi 主通道, Qwen 回退'),
+  ('qwen3.5-plus', 'qwen_api', NULL, TRUE, 'Qwen 直连')
+ON CONFLICT (model_name) DO UPDATE SET
+  primary_provider = EXCLUDED.primary_provider,
+  fallback_provider = EXCLUDED.fallback_provider,
+  is_enabled = EXCLUDED.is_enabled,
+  description = EXCLUDED.description,
+  updated_at = NOW();
 
 -- provider_configs 示例（请替换为真实密钥/地址）
 INSERT INTO provider_configs (provider_name, config_json, is_enabled)
 VALUES
-  ('kimi_cli', JSON_OBJECT(
+  (
+    'kimi_cli',
+    jsonb_build_object(
       'command', 'kimi',
-      'args', JSON_ARRAY('chat'),
+      'args', jsonb_build_array('chat'),
       'model_arg', '--model',
       'prompt_arg', '--prompt',
       'stream_arg', '--stream',
       'timeout_sec', 120
-    ), 1),
-  ('qwen_api', JSON_OBJECT(
+    ),
+    TRUE
+  ),
+  (
+    'qwen_api',
+    jsonb_build_object(
       'base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1',
       'chat_endpoint', '/chat/completions',
       'api_key', 'REPLACE_WITH_REAL_KEY',
       'upstream_model', 'qwen3.5-plus',
       'timeout_sec', 120
-    ), 1)
-ON DUPLICATE KEY UPDATE
-  config_json = VALUES(config_json),
-  is_enabled = VALUES(is_enabled);
+    ),
+    TRUE
+  )
+ON CONFLICT (provider_name) DO UPDATE SET
+  config_json = EXCLUDED.config_json,
+  is_enabled = EXCLUDED.is_enabled,
+  updated_at = NOW();

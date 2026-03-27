@@ -6,8 +6,9 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
-import pymysql
-from pymysql.cursors import DictCursor
+import psycopg
+from psycopg.rows import dict_row
+from psycopg.types.json import Json
 
 from app.config import Settings
 
@@ -16,20 +17,19 @@ class RepositoryError(Exception):
     pass
 
 
-class MySQLRepository:
+class PostgresRepository:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    def _get_conn(self) -> pymysql.Connection:
-        return pymysql.connect(
-            host=self.settings.mysql_host,
-            port=self.settings.mysql_port,
-            user=self.settings.mysql_user,
-            password=self.settings.mysql_password,
-            database=self.settings.mysql_database,
-            charset=self.settings.mysql_charset,
-            connect_timeout=self.settings.mysql_connect_timeout,
-            cursorclass=DictCursor,
+    def _get_conn(self) -> psycopg.Connection:
+        return psycopg.connect(
+            host=self.settings.pg_host,
+            port=self.settings.pg_port,
+            user=self.settings.pg_user,
+            password=self.settings.pg_password,
+            dbname=self.settings.pg_database,
+            connect_timeout=self.settings.pg_connect_timeout,
+            row_factory=dict_row,
             autocommit=True,
         )
 
@@ -49,25 +49,28 @@ class MySQLRepository:
         return value
 
     @staticmethod
-    def _safe_json_dumps(value: Any, limit: int = 20000) -> str | None:
+    def _safe_json_value(value: Any, limit: int = 20000) -> Any:
         if value is None:
             return None
+
+        normalized = value
         try:
-            text = json.dumps(value, ensure_ascii=False)
+            text = json.dumps(normalized, ensure_ascii=False)
         except TypeError:
-            text = json.dumps(str(value), ensure_ascii=False)
+            normalized = str(value)
+            text = json.dumps(normalized, ensure_ascii=False)
+
         if len(text) > limit:
-            # JSON 列必须保持合法，不能直接截断序列化字符串
             preview_limit = max(256, min(limit // 2, 8000))
             overflow = len(text) - preview_limit
-            payload = {
+            return {
                 "_truncated": True,
                 "_original_length": len(text),
                 "_overflow_chars": overflow,
                 "preview": text[:preview_limit],
             }
-            return json.dumps(payload, ensure_ascii=False)
-        return text
+
+        return normalized
 
     @staticmethod
     def _p95(values: list[int]) -> int | None:
@@ -76,6 +79,12 @@ class MySQLRepository:
             return None
         idx = max(0, math.ceil(len(cleaned) * 0.95) - 1)
         return cleaned[idx]
+
+    @staticmethod
+    def _to_json_param(value: Any) -> Json | None:
+        if value is None:
+            return None
+        return Json(value)
 
     def healthcheck(self) -> bool:
         try:
@@ -100,7 +109,7 @@ class MySQLRepository:
                 row = cursor.fetchone()
         if not row:
             return None
-        row["is_enabled"] = bool(row.get("is_enabled", 1))
+        row["is_enabled"] = bool(row.get("is_enabled", True))
         return row
 
     def list_route_rules(self) -> list[dict[str, Any]]:
@@ -114,7 +123,7 @@ class MySQLRepository:
                 cursor.execute(sql)
                 rows = cursor.fetchall()
         for row in rows:
-            row["is_enabled"] = bool(row.get("is_enabled", 1))
+            row["is_enabled"] = bool(row.get("is_enabled", True))
         return rows
 
     def upsert_route_rules(self, rules: list[dict[str, Any]]) -> int:
@@ -124,12 +133,12 @@ class MySQLRepository:
         sql = """
         INSERT INTO route_rules (model_name, primary_provider, fallback_provider, is_enabled, description)
         VALUES (%s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            primary_provider = VALUES(primary_provider),
-            fallback_provider = VALUES(fallback_provider),
-            is_enabled = VALUES(is_enabled),
-            description = VALUES(description),
-            updated_at = CURRENT_TIMESTAMP
+        ON CONFLICT (model_name) DO UPDATE SET
+            primary_provider = EXCLUDED.primary_provider,
+            fallback_provider = EXCLUDED.fallback_provider,
+            is_enabled = EXCLUDED.is_enabled,
+            description = EXCLUDED.description,
+            updated_at = NOW()
         """
 
         values = [
@@ -137,7 +146,7 @@ class MySQLRepository:
                 item["model_name"],
                 item["primary_provider"],
                 item.get("fallback_provider"),
-                1 if item.get("is_enabled", True) else 0,
+                bool(item.get("is_enabled", True)),
                 item.get("description"),
             )
             for item in rules
@@ -146,7 +155,7 @@ class MySQLRepository:
         with self._get_conn() as conn:
             with conn.cursor() as cursor:
                 cursor.executemany(sql, values)
-                return cursor.rowcount
+        return len(values)
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any] | None:
         sql = """
@@ -166,7 +175,7 @@ class MySQLRepository:
         return {
             "provider_name": row["provider_name"],
             "config": self._json_load(row.get("config_json")) or {},
-            "is_enabled": bool(row.get("is_enabled", 1)),
+            "is_enabled": bool(row.get("is_enabled", True)),
             "created_at": row.get("created_at"),
             "updated_at": row.get("updated_at"),
         }
@@ -188,7 +197,7 @@ class MySQLRepository:
                 {
                     "provider_name": row["provider_name"],
                     "config": self._json_load(row.get("config_json")) or {},
-                    "is_enabled": bool(row.get("is_enabled", 1)),
+                    "is_enabled": bool(row.get("is_enabled", True)),
                     "created_at": row.get("created_at"),
                     "updated_at": row.get("updated_at"),
                 }
@@ -202,17 +211,17 @@ class MySQLRepository:
         sql = """
         INSERT INTO provider_configs (provider_name, config_json, is_enabled)
         VALUES (%s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            config_json = VALUES(config_json),
-            is_enabled = VALUES(is_enabled),
-            updated_at = CURRENT_TIMESTAMP
+        ON CONFLICT (provider_name) DO UPDATE SET
+            config_json = EXCLUDED.config_json,
+            is_enabled = EXCLUDED.is_enabled,
+            updated_at = NOW()
         """
 
         values = [
             (
                 item["provider_name"],
-                self._safe_json_dumps(item.get("config", {})),
-                1 if item.get("is_enabled", True) else 0,
+                self._to_json_param(self._safe_json_value(item.get("config", {}))),
+                bool(item.get("is_enabled", True)),
             )
             for item in providers
         ]
@@ -220,7 +229,7 @@ class MySQLRepository:
         with self._get_conn() as conn:
             with conn.cursor() as cursor:
                 cursor.executemany(sql, values)
-                return cursor.rowcount
+        return len(values)
 
     def insert_call_log(self, log_data: dict[str, Any]) -> int:
         sql = """
@@ -246,6 +255,7 @@ class MySQLRepository:
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
+        RETURNING id
         """
 
         values = (
@@ -255,7 +265,7 @@ class MySQLRepository:
             log_data.get("model_name"),
             log_data.get("primary_provider"),
             log_data.get("fallback_provider"),
-            self._safe_json_dumps(log_data.get("route_chain", [])),
+            self._to_json_param(self._safe_json_value(log_data.get("route_chain", []))),
             log_data.get("selected_provider"),
             log_data.get("status"),
             log_data.get("http_status"),
@@ -264,15 +274,16 @@ class MySQLRepository:
             log_data.get("completion_tokens"),
             log_data.get("total_tokens"),
             log_data.get("latency_ms"),
-            1 if log_data.get("is_stream", False) else 0,
-            self._safe_json_dumps(log_data.get("request_body")),
-            self._safe_json_dumps(log_data.get("response_body")),
+            bool(log_data.get("is_stream", False)),
+            self._to_json_param(self._safe_json_value(log_data.get("request_body"))),
+            self._to_json_param(self._safe_json_value(log_data.get("response_body"))),
         )
 
         with self._get_conn() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(sql, values)
-                return int(cursor.lastrowid)
+                row = cursor.fetchone() or {}
+                return int(row.get("id", 0))
 
     def list_calls(self, filters: dict[str, Any]) -> dict[str, Any]:
         where_clauses = ["1=1"]
@@ -332,7 +343,7 @@ class MySQLRepository:
                 items = cursor.fetchall()
 
         for row in items:
-            row["is_stream"] = bool(row.get("is_stream", 0))
+            row["is_stream"] = bool(row.get("is_stream", False))
             row["route_chain"] = self._json_load(row.get("route_chain")) or []
 
         return {"total": total, "items": items}
