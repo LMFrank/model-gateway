@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,13 +17,12 @@ class Settings(BaseSettings):
     gateway_client_token: str = Field(default="", alias="GATEWAY_CLIENT_TOKEN")
     gateway_admin_token: str = Field(default="", alias="GATEWAY_ADMIN_TOKEN")
 
-    mysql_host: str = Field(default="mysql", alias="MYSQL_HOST")
-    mysql_port: int = Field(default=3306, alias="MYSQL_PORT")
-    mysql_user: str = Field(default="model_gateway_user", alias="MYSQL_USER")
-    mysql_password: str = Field(default="", alias="MYSQL_PASSWORD")
-    mysql_database: str = Field(default="model_gateway", alias="MYSQL_DATABASE")
-    mysql_charset: str = Field(default="utf8mb4", alias="MYSQL_CHARSET")
-    mysql_connect_timeout: int = Field(default=5, alias="MYSQL_CONNECT_TIMEOUT")
+    pg_host: str = Field(default="pg", validation_alias=AliasChoices("PG_HOST", "MYSQL_HOST"))
+    pg_port: int = Field(default=5432, validation_alias=AliasChoices("PG_PORT", "MYSQL_PORT"))
+    pg_user: str = Field(default="model_gateway_user", validation_alias=AliasChoices("PG_USER", "MYSQL_USER"))
+    pg_password: str = Field(default="", validation_alias=AliasChoices("PG_PASSWORD", "MYSQL_PASSWORD"))
+    pg_database: str = Field(default="model_gateway", validation_alias=AliasChoices("PG_DATABASE", "MYSQL_DATABASE"))
+    pg_connect_timeout: int = Field(default=5, validation_alias=AliasChoices("PG_CONNECT_TIMEOUT", "MYSQL_CONNECT_TIMEOUT"))
 
     qwen_timeout_sec: int = Field(default=120, alias="QWEN_TIMEOUT_SEC")
     kimi_timeout_sec: int = Field(default=120, alias="KIMI_TIMEOUT_SEC")
