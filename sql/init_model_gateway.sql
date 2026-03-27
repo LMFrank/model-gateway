@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS daily_usage_agg (
 -- 示例路由规则
 INSERT INTO route_rules (model_name, primary_provider, fallback_provider, is_enabled, description)
 VALUES
-  ('kimi-for-coding', 'kimi_cli', 'qwen_api', TRUE, 'Kimi 主通道, Qwen 回退'),
+  ('kimi-for-coding', 'kimi_cli', NULL, TRUE, 'Kimi 主通道（无回退）'),
   ('qwen3.5-plus', 'qwen_api', NULL, TRUE, 'Qwen 直连')
 ON CONFLICT (model_name) DO UPDATE SET
   primary_provider = EXCLUDED.primary_provider,
@@ -98,6 +98,7 @@ VALUES
       'args', jsonb_build_array('chat'),
       'model_arg', '--model',
       'prompt_arg', '--prompt',
+      'use_stdin_prompt', TRUE,
       'stream_arg', '--stream',
       'timeout_sec', 120
     ),
