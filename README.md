@@ -1,8 +1,8 @@
-# Model Gateway v0.0.2
+# Model Gateway v0.0.3
 
-基于 FastAPI 的模型网关，按 OpenAI 风格 `model` 名称进行强制路由，支持主通道+回退通道、流式转发、管理接口与调用审计。
+基于 FastAPI 的模型网关，按 OpenAI 风格 `model` 名称进行强制路由，支持流式转发、管理接口与调用审计。
 
-**当前版本**: `v0.0.2`
+**当前版本**: `v0.0.3`
 
 ## 功能范围
 - `POST /v1/chat/completions`（支持 `stream=true`）
@@ -61,5 +61,6 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 - `MODEL_NAME`: `kimi-for-coding` / `qwen3.5-plus`
 
 ## 版本历史
+- `v0.0.3` (2026-03-28): 根修 `kimi_cli` 长 prompt 触发 `Argument list too long`，默认改为 stdin 传 prompt，保留参数兼容模式并补充测试。
 - `v0.0.2` (2026-03-27): 切换数据库到 PostgreSQL，网关支持跨网络连接 DB，脚本与文档通用化。
 - `v0.0.1`: 初始版本（FastAPI 网关基础能力）。

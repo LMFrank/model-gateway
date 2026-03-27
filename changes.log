@@ -1,0 +1,75 @@
+# changes.log
+
+AI 协作过程日志（append-only），与版本发布日志分离。
+
+## 写入规则
+- 每个任务至少两条：`START` + (`DONE` | `HANDOFF` | `BLOCKED`)。
+- 仅追加，不改写历史记录。
+- 每条记录必须包含：`Intent`、`Scope`、`Files`、`Verify`、`Next`。
+- 发版后归档：`bash scripts/archive_changes_log.sh <release-tag>`，归档到 `changes/archive/` 后重置本文件为模板。
+
+## 记录模板
+```md
+## [时间] [工具] [任务ID] [状态]
+- Intent: 本次目标
+- Scope: 改动边界（做什么/不做什么）
+- Files: 变更文件（逗号分隔）
+- Verify: 验证命令与结果摘要
+- Next: 下一步动作（若 DONE 可写 `None`）
+```
+
+## [2026-03-27 23:01 +08:00] [Codex] [TASK-20260327-2301-codex] [START]
+- Intent: 为 model-gateway 落地精简 AGENTS + changes.log 协作规范
+- Scope: 精简 AGENTS、新增 changes.log、修正 .gitignore，不改业务代码
+- Files: AGENTS.md, changes.log, .gitignore
+- Verify: 执行中，完成后检查 ignore 规则与 git status
+- Next: 更新 AGENTS/.gitignore 并写 DONE
+
+## [2026-03-27 23:03 +08:00] [Codex] [TASK-20260327-2301-codex] [DONE]
+- Intent: 为 model-gateway 落地精简 AGENTS + changes.log 协作规范
+- Scope: 已完成 AGENTS 精简、changes.log 建立、.gitignore 放行 changes.log 并取消忽略 AGENTS.md
+- Files: AGENTS.md, changes.log, .gitignore
+- Verify: `rg -n "Multi-AI Collaboration|changes\.log|CHANGELOG\.md|/init" -S AGENTS.md changes.log README.md` 命中预期；`git status --short` 显示 `AGENTS.md` 与 `changes.log` 可被 Git 跟踪
+- Next: 后续每个任务按 changes.log 模板追加 START + 终态
+
+## [2026-03-27 23:08 +08:00] [Codex] [TASK-20260327-2308-codex] [START]
+- Intent: 为 model-gateway 增加 changes.log 发版归档机制
+- Scope: 更新 AGENTS/changes.log/.gitignore，新增归档脚本，不改业务代码
+- Files: AGENTS.md, changes.log, .gitignore, scripts/archive_changes_log.sh
+- Verify: 执行中，完成后检查脚本、ignore、状态
+- Next: 写 DONE 并给出使用命令
+
+## [2026-03-27 23:09 +08:00] [Codex] [TASK-20260327-2308-codex] [DONE]
+- Intent: 为 model-gateway 增加 changes.log 发版归档机制
+- Scope: 已完成 AGENTS/changes.log/.gitignore 更新并新增归档脚本
+- Files: AGENTS.md, changes.log, .gitignore, scripts/archive_changes_log.sh
+- Verify: `rg -n "Archive Policy|archive_changes_log\.sh|changes/archive" -S AGENTS.md changes.log scripts/archive_changes_log.sh .gitignore` 命中预期；`git check-ignore AGENTS.md changes.log changes/archive/test.log` 退出码为 1（未忽略）
+- Next: 发版后执行 `bash scripts/archive_changes_log.sh <release-tag>`
+
+## [2026-03-28 00:26 +08:00] [Codex] [TASK-20260328-0026-kimi-stdin] [START]
+- Intent: 根修 kimi_cli 超长 prompt 导致的 Argument list too long，改为默认 stdin 传参并补齐测试与重建验证
+- Scope: 修改 kimi_cli 适配器、补充单测、更新 SQL 示例配置并执行 pytest 与 docker 重建，不做线上补丁/模型兜底
+- Files: app/adapters/kimi_cli.py, tests/test_kimi_cli_adapter.py, sql/init_model_gateway.sql, changes.log
+- Verify: 执行中，完成后记录 pytest、docker compose、超长请求与日志检查结果
+- Next: 实现 stdin 模式与测试，完成后写 DONE
+
+## [2026-03-28 00:33 +08:00] [Codex] [TASK-20260328-0026-kimi-stdin] [DONE]
+- Intent: 根修 kimi_cli 超长 prompt 导致的 Argument list too long，改为默认 stdin 传参并补齐测试与重建验证
+- Scope: 已完成 kimi_cli 适配器 stdin 优先改造、兼容参数模式保留、SQL 示例更新、单测新增与容器重建验收
+- Files: app/adapters/kimi_cli.py, tests/test_kimi_cli_adapter.py, sql/init_model_gateway.sql, changes.log
+- Verify: `.venv/bin/pytest -q` 15 passed；`DOCKER_BUILDKIT=0 docker compose up -d --build --force-recreate` 成功重建并启动；超长请求（150000 字符）POST `/v1/chat/completions` 返回 200；`docker logs model-gateway | rg "Argument list too long|provider request failed: kimi_cli"` 无命中
+- Next: None
+
+## [2026-03-28 00:36 +08:00] [Codex] [TASK-20260328-0036-release-v0.0.3] [START]
+- Intent: 发布 model-gateway 新版本并打 release tag
+- Scope: 同步 README 版本信息与必要说明，提交当前发布改动并创建 v0.0.3 tag，不做业务逻辑外扩
+- Files: README.md, app/adapters/kimi_cli.py, tests/test_kimi_cli_adapter.py, sql/init_model_gateway.sql, changes.log（按提交结果更新）
+- Verify: 执行 pytest 与 git tag 校验
+- Next: 完成版本更新、提交与打 tag
+
+## [2026-03-28 00:42 +08:00] [Codex] [TASK-20260328-0036-release-v0.0.3] [DONE]
+- Intent: 发布 model-gateway 新版本并打 release tag
+- Scope: 已完成 README 版本更新、发布改动提交与 v0.0.3 tag 创建
+- Files: .gitignore, README.md, app/adapters/kimi_cli.py, sql/init_model_gateway.sql, AGENTS.md, changes.log, scripts/archive_changes_log.sh, tests/test_kimi_cli_adapter.py
+- Verify: `. .venv/bin/activate && pytest -q` 15 passed；`git tag -n | grep v0.0.3` 命中新 tag
+- Next: None

@@ -36,21 +36,26 @@ class KimiCliAdapter:
         self.settings = settings
 
     async def chat(self, payload: dict[str, Any], provider_config: dict[str, Any]) -> dict[str, Any]:
-        cmd, prompt, env = self._build_command(payload, provider_config, stream=False)
+        cmd, prompt, env, use_stdin_prompt = self._build_command(payload, provider_config, stream=False)
         timeout_sec = int(provider_config.get("timeout_sec", self.settings.kimi_timeout_sec))
+        stdin = asyncio.subprocess.PIPE if use_stdin_prompt else None
+        stdin_input = prompt.encode("utf-8") if use_stdin_prompt else None
 
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=stdin,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(input=stdin_input), timeout=timeout_sec)
         except asyncio.TimeoutError as exc:
             raise AdapterError(f"kimi cli timeout after {timeout_sec}s") from exc
         except FileNotFoundError as exc:
             raise AdapterError(f"kimi cli command not found: {cmd[0]}") from exc
+        except OSError as exc:
+            raise AdapterError(f"kimi cli process spawn failed: {exc}") from exc
 
         if proc.returncode != 0:
             stderr_text = stderr.decode("utf-8", errors="ignore").strip()
@@ -85,17 +90,28 @@ class KimiCliAdapter:
         }
 
     async def prepare_stream(self, payload: dict[str, Any], provider_config: dict[str, Any]) -> StreamHandle:
-        cmd, _, env = self._build_command(payload, provider_config, stream=True)
+        cmd, prompt, env, use_stdin_prompt = self._build_command(payload, provider_config, stream=True)
+        stdin = asyncio.subprocess.PIPE if use_stdin_prompt else None
 
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=stdin,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
             )
         except FileNotFoundError as exc:
             raise AdapterError(f"kimi cli command not found: {cmd[0]}") from exc
+        except OSError as exc:
+            raise AdapterError(f"kimi cli process spawn failed: {exc}") from exc
+
+        if use_stdin_prompt:
+            if proc.stdin is None:
+                raise AdapterError("kimi cli stdin unavailable in stdin mode")
+            proc.stdin.write(prompt.encode("utf-8"))
+            await proc.stdin.drain()
+            proc.stdin.close()
 
         chat_id = f"chatcmpl-kimi-{uuid.uuid4().hex[:24]}"
         created = int(time.time())
@@ -164,7 +180,7 @@ class KimiCliAdapter:
         payload: dict[str, Any],
         provider_config: dict[str, Any],
         stream: bool,
-    ) -> tuple[list[str], str, dict[str, str]]:
+    ) -> tuple[list[str], str, dict[str, str], bool]:
         command = str(provider_config.get("command") or self.settings.kimi_cli_cmd)
         args = provider_config.get("args", ["chat"])
         if isinstance(args, str):
@@ -179,7 +195,7 @@ class KimiCliAdapter:
 
         prompt = _messages_to_prompt(payload.get("messages", []))
         prompt_arg = provider_config.get("prompt_arg", "--prompt")
-        cmd.extend([str(prompt_arg), prompt])
+        use_stdin_prompt_config = bool(provider_config.get("use_stdin_prompt", True))
 
         if stream:
             stream_arg = provider_config.get("stream_arg", "--stream")
@@ -193,13 +209,22 @@ class KimiCliAdapter:
         if isinstance(extra_args, list):
             cmd.extend([str(item) for item in extra_args])
 
+        has_print = "--print" in cmd
+        has_input_format = any(item == "--input-format" or item.startswith("--input-format=") for item in cmd)
+        use_stdin_prompt = use_stdin_prompt_config and has_print
+        if use_stdin_prompt and has_print and not has_input_format:
+            cmd.extend(["--input-format", "text"])
+
+        if not use_stdin_prompt:
+            cmd.extend([str(prompt_arg), prompt])
+
         env = os.environ.copy()
         extra_env = provider_config.get("env", {})
         if isinstance(extra_env, dict):
             for k, v in extra_env.items():
                 env[str(k)] = str(v)
 
-        return cmd, prompt, env
+        return cmd, prompt, env, use_stdin_prompt
 
     @staticmethod
     def _to_sse(data: dict[str, Any]) -> bytes:

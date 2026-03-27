@@ -14,12 +14,14 @@ venv/
 .env.*
 !.env.example
 .runtime_tokens
-AGENTS.md
 
 # Runtime data
 logs/
 runtime/
 *.log
+!changes.log
+!changes/archive/
+!changes/archive/*.log
 *.pid
 
 # Local backup files
