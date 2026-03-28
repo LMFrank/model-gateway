@@ -11,6 +11,7 @@ services:
       - "${GATEWAY_PORT:-8080}:8080"
     volumes:
       - ${KIMI_HOME_DIR:-./runtime/kimi-home}:/root/.kimi
+      - ${CODEX_HOME_DIR:-./runtime/codex-home}:/root/.codex
     networks:
       - gateway_shared
       - gateway_db

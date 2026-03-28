@@ -1,8 +1,8 @@
-# Model Gateway v0.0.3
+# Model Gateway v0.0.4
 
 基于 FastAPI 的模型网关，按 OpenAI 风格 `model` 名称进行强制路由，支持流式转发、管理接口与调用审计。
 
-**当前版本**: `v0.0.3`
+**当前版本**: `v0.0.4`
 
 ## 功能范围
 - `POST /v1/chat/completions`（支持 `stream=true`）
@@ -49,18 +49,20 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 - 网络与端口：`GATEWAY_PORT`、`GATEWAY_DOCKER_NETWORK`、`DB_DOCKER_NETWORK`
 - PostgreSQL：`PG_HOST`、`PG_PORT`、`PG_USER`、`PG_PASSWORD`、`PG_DATABASE`
 - Kimi CLI：`KIMI_HOME_DIR`、`KIMI_CLI_CMD`
+- Codex CLI：`CODEX_HOME_DIR`（建议填绝对路径，如 `/Users/you/.codex`，需已 `codex login`），模型建议 `gpt-5.3-codex`
 
 ## 接入任意上游应用
 - 将上游应用的模型出口 `BASE_URL` 指向 `http://model-gateway:8080/v1`
 - 将上游应用 `API_KEY` 设为 `GATEWAY_CLIENT_TOKEN`
-- `MODEL_NAME` 使用网关规则中的 OpenAI 风格模型名（如 `kimi-for-coding`、`qwen3.5-plus`）
+- `MODEL_NAME` 使用网关规则中的 OpenAI 风格模型名（如 `kimi-for-coding`、`codex-for-coding`、`qwen3.5-plus`）
 
 ## StockAgents 示例
 - `BASE_URL`: `http://model-gateway:8080/v1`
 - `API_KEY`: `GATEWAY_CLIENT_TOKEN`
-- `MODEL_NAME`: `kimi-for-coding` / `qwen3.5-plus`
+- `MODEL_NAME`: `kimi-for-coding` / `codex-for-coding` / `qwen3.5-plus`
 
 ## 版本历史
+- `v0.0.4` (2026-03-28): 新增 `codex_cli` provider 与 `codex-for-coding` 路由，补充容器内 Codex CLI 运行支持（含 `.codex` 挂载与默认模型配置），并完善对应测试与初始化 SQL。
 - `v0.0.3` (2026-03-28): 根修 `kimi_cli` 长 prompt 触发 `Argument list too long`，默认改为 stdin 传 prompt，保留参数兼容模式并补充测试。
 - `v0.0.2` (2026-03-27): 切换数据库到 PostgreSQL，网关支持跨网络连接 DB，脚本与文档通用化。
 - `v0.0.1`: 初始版本（FastAPI 网关基础能力）。
