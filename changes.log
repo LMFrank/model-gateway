@@ -213,3 +213,17 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Files: README.md, .env.example, changes.log
 - Verify: `. .venv/bin/activate && pytest -q` => `17 passed in 0.90s`；`git tag -n | grep v0.0.5`（已创建后校验）
 - Next: None
+
+## [2026-03-28 15:00 +08:00] [Codex] [TASK-20260328-1500-readme-core-generalize] [START]
+- Intent: README 去业务专名化并强化项目核心价值说明，提交补充到当前分支
+- Scope: 仅改 README 文档结构与示例文案，不改接口/代码行为
+- Files: README.md, changes.log
+- Verify: 文档一致性自查 + `. .venv/bin/activate && pytest -q`
+- Next: 完成 README 改写并提交
+
+## [2026-03-28 15:01 +08:00] [Codex] [TASK-20260328-1500-readme-core-generalize] [DONE]
+- Intent: README 去业务专名化并强化项目核心价值说明，提交补充到当前分支
+- Scope: 已移除业务专名示例，补充核心作用与请求链路说明；未改接口/代码行为
+- Files: README.md, changes.log
+- Verify: `rg -n "StockAgents|上游通用示例|核心作用|请求链路" README.md`；`. .venv/bin/activate && pytest -q` => `17 passed in 0.56s`
+- Next: None
