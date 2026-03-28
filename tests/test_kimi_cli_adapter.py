@@ -66,3 +66,23 @@ def test_build_command_auto_adds_input_format_text_when_print_enabled() -> None:
     assert "--input-format" in cmd
     idx = cmd.index("--input-format")
     assert cmd[idx + 1] == "text"
+
+
+def test_build_command_force_stdin_prompt_for_non_print_cli() -> None:
+    adapter = KimiCliAdapter(Settings())
+    payload = _make_payload("hello codex")
+    provider_config = {
+        "command": "codex",
+        "args": ["exec"],
+        "use_stdin_prompt": True,
+        "force_stdin_prompt": True,
+        "stdin_prompt_arg": "-",
+        "prompt_arg": "--prompt",
+    }
+
+    cmd, prompt, _, use_stdin_prompt = adapter._build_command(payload, provider_config, stream=False)
+
+    assert use_stdin_prompt is True
+    assert "-" in cmd
+    assert "--prompt" not in cmd
+    assert prompt.endswith("hello codex")

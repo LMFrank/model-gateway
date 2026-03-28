@@ -40,6 +40,12 @@ class KimiCliAdapter:
         timeout_sec = int(provider_config.get("timeout_sec", self.settings.kimi_timeout_sec))
         stdin = asyncio.subprocess.PIPE if use_stdin_prompt else None
         stdin_input = prompt.encode("utf-8") if use_stdin_prompt else None
+        response_file = str(provider_config.get("response_file", "")).strip() or None
+        if response_file:
+            try:
+                os.remove(response_file)
+            except FileNotFoundError:
+                pass
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -61,7 +67,15 @@ class KimiCliAdapter:
             stderr_text = stderr.decode("utf-8", errors="ignore").strip()
             raise AdapterError(f"kimi cli failed: {stderr_text or f'exit code {proc.returncode}'}")
 
-        content = stdout.decode("utf-8", errors="ignore").strip()
+        content = ""
+        if response_file:
+            try:
+                with open(response_file, encoding="utf-8") as f:
+                    content = f.read().strip()
+            except OSError:
+                content = ""
+        if not content:
+            content = stdout.decode("utf-8", errors="ignore").strip()
         if not content:
             raise AdapterError("kimi cli returned empty response")
 
@@ -196,6 +210,8 @@ class KimiCliAdapter:
         prompt = _messages_to_prompt(payload.get("messages", []))
         prompt_arg = provider_config.get("prompt_arg", "--prompt")
         use_stdin_prompt_config = bool(provider_config.get("use_stdin_prompt", True))
+        force_stdin_prompt = bool(provider_config.get("force_stdin_prompt", False))
+        stdin_prompt_arg = provider_config.get("stdin_prompt_arg")
 
         if stream:
             stream_arg = provider_config.get("stream_arg", "--stream")
@@ -211,12 +227,20 @@ class KimiCliAdapter:
 
         has_print = "--print" in cmd
         has_input_format = any(item == "--input-format" or item.startswith("--input-format=") for item in cmd)
-        use_stdin_prompt = use_stdin_prompt_config and has_print
+        use_stdin_prompt = use_stdin_prompt_config and (has_print or force_stdin_prompt)
         if use_stdin_prompt and has_print and not has_input_format:
             cmd.extend(["--input-format", "text"])
+        if use_stdin_prompt and stdin_prompt_arg is not None:
+            if isinstance(stdin_prompt_arg, list):
+                cmd.extend([str(item) for item in stdin_prompt_arg])
+            else:
+                cmd.append(str(stdin_prompt_arg))
 
         if not use_stdin_prompt:
-            cmd.extend([str(prompt_arg), prompt])
+            if prompt_arg in (None, ""):
+                cmd.append(prompt)
+            else:
+                cmd.extend([str(prompt_arg), prompt])
 
         env = os.environ.copy()
         extra_env = provider_config.get("env", {})

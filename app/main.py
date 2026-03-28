@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
     router_engine = RouterEngine()
     adapter_registry = {
         "kimi_cli": KimiCliAdapter(settings),
+        "codex_cli": KimiCliAdapter(settings),
         "kimi_api": QwenApiAdapter(settings),
         "qwen_api": QwenApiAdapter(settings),
     }

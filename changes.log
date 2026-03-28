@@ -73,3 +73,59 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Files: .gitignore, README.md, app/adapters/kimi_cli.py, sql/init_model_gateway.sql, AGENTS.md, changes.log, scripts/archive_changes_log.sh, tests/test_kimi_cli_adapter.py
 - Verify: `. .venv/bin/activate && pytest -q` 15 passed；`git tag -n | grep v0.0.3` 命中新 tag
 - Next: None
+
+## [2026-03-28 08:01 +08:00] [Codex] [TASK-20260328-0801-add-codex-cli] [START]
+- Intent: 将 Codex 作为与 Kimi Code 同类的 CLI provider 接入 model-gateway
+- Scope: 增加 codex_cli provider 映射与示例配置，补充文档与必要测试；不改动路由核心逻辑
+- Files: app/main.py, sql/init_model_gateway.sql, README.md, tests/test_main_app.py, changes.log
+- Verify: 执行 pytest 覆盖新增与回归用例
+- Next: 实现 codex_cli 接入并更新文档后写 DONE
+
+## [2026-03-28 08:04 +08:00] [Codex] [TASK-20260328-0801-add-codex-cli] [DONE]
+- Intent: 将 Codex 作为与 Kimi Code 同类的 CLI provider 接入 model-gateway
+- Scope: 已完成 codex_cli provider 接入、CLI stdin 策略增强、SQL 初始化示例与文档更新，并补充测试
+- Files: app/adapters/kimi_cli.py, app/main.py, sql/init_model_gateway.sql, README.md, tests/test_kimi_cli_adapter.py, tests/test_main_helpers.py, changes.log
+- Verify: `. .venv/bin/activate && pytest -q` 17 passed（含 codex_cli 注册与非 --print CLI 的 stdin 新增用例）
+- Next: None
+
+## [2026-03-28 08:26 +08:00] [Codex] [TASK-20260328-0826-rebuild-prod] [START]
+- Intent: 重建生产容器并完成可用性验证
+- Scope: 执行 docker compose 重建与重启，检查容器状态、关键日志与健康接口；不改业务代码
+- Files: changes.log
+- Verify: docker compose ps、docker logs、curl /healthz
+- Next: 执行重建并写入验证结果
+
+## [2026-03-28 08:28 +08:00] [Codex] [TASK-20260328-0826-rebuild-prod] [DONE]
+- Intent: 重建生产容器并完成可用性验证
+- Scope: 已完成 docker compose 重建重启，并验证容器状态、健康接口与主链路调用
+- Files: changes.log
+- Verify: `docker compose up -d --build --force-recreate` 成功；`docker compose ps` 显示 Up；`curl /healthz` 返回 200；`/v1/chat/completions`（model=`kimi-for-coding`）返回 200 且内容为 ok；补充核查发现当前 `/admin/routes` 尚无 `codex-for-coding`，且容器内无 `codex` 可执行文件
+- Next: None
+
+## [2026-03-28 08:31 +08:00] [Codex] [TASK-20260328-0831-codex-prod-verify] [START]
+- Intent: 在生产网关写入 codex 路由/provider 配置并验证 codex-for-coding 调用成功
+- Scope: 更新容器运行环境使其可执行 codex，写入 /admin 路由与 provider 配置，执行真实请求验证；不改网关业务逻辑
+- Files: Dockerfile, docker-compose.yml, README.md, changes.log
+- Verify: docker compose 重建、容器内 codex 可执行、/admin 配置回读、/v1/chat/completions(codex-for-coding) 成功
+- Next: 修改部署配置并重建后执行写入与验证
+
+## [2026-03-28 08:44 +08:00] [Codex] [TASK-20260328-0831-codex-prod-verify] [DONE]
+- Intent: 在生产网关写入 codex 路由/provider 配置并验证 codex-for-coding 调用成功
+- Scope: 已完成容器 codex 可执行与认证挂载、provider+route 写入、真实请求验证；并将 codex 模型固定为 gpt-5.3-codex
+- Files: Dockerfile, docker-compose.yml, .env.example, .env, README.md, sql/init_model_gateway.sql, app/adapters/kimi_cli.py, changes.log
+- Verify: `docker compose up -d --build --force-recreate` 成功；`docker exec model-gateway codex --version`=0.117.0 且 `codex login status`=Logged in using ChatGPT；`POST /admin/providers` 与 `POST /admin/routes` 写入成功；`POST /v1/chat/completions`(model=`codex-for-coding`) 返回 200 且内容 `ok`；`/admin/calls` 最新记录 selected_provider=`codex_cli` status=`success`；`. .venv/bin/activate && pytest -q` 17 passed
+- Next: None
+
+## [2026-03-28 12:55 +0800] [Codex] [TASK-20260328-RELEASE-v0.0.4] [START]
+- Intent: 发布 model-gateway v0.0.4（纳入 codex_cli 接入与部署配置）
+- Scope: 同步 README 版本与版本历史，校验端口/环境变量文档一致性，完成发布提交与 tag；不新增业务功能
+- Files: README.md, changes.log（提交时包含本次待发布代码改动）
+- Verify: 执行 pytest 与 git tag 校验
+- Next: 更新 README 到 v0.0.4 并完成发布提交与打 tag
+
+## [2026-03-28 13:00 +08:00] [Codex] [TASK-20260328-RELEASE-v0.0.4] [DONE]
+- Intent: 发布 model-gateway v0.0.4（纳入 codex_cli 接入与部署配置）
+- Scope: 已完成版本信息同步、配置一致性校验与发布提交准备，发布改动包含 codex_cli 接入、容器 Codex CLI 运行支持、SQL 初始化与测试补全
+- Files: .env.example, Dockerfile, README.md, app/adapters/kimi_cli.py, app/main.py, docker-compose.yml, sql/init_model_gateway.sql, tests/test_kimi_cli_adapter.py, tests/test_main_helpers.py, changes.log
+- Verify: `. .venv/bin/activate && pytest -q` 17 passed
+- Next: None

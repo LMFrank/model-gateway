@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS daily_usage_agg (
 INSERT INTO route_rules (model_name, primary_provider, fallback_provider, is_enabled, description)
 VALUES
   ('kimi-for-coding', 'kimi_cli', NULL, TRUE, 'Kimi 主通道（无回退）'),
+  ('codex-for-coding', 'codex_cli', NULL, TRUE, 'Codex 主通道（无回退）'),
   ('qwen3.5-plus', 'qwen_api', NULL, TRUE, 'Qwen 直连')
 ON CONFLICT (model_name) DO UPDATE SET
   primary_provider = EXCLUDED.primary_provider,
@@ -101,6 +102,22 @@ VALUES
       'use_stdin_prompt', TRUE,
       'stream_arg', '--stream',
       'timeout_sec', 120
+    ),
+    TRUE
+  ),
+  (
+    'codex_cli',
+    jsonb_build_object(
+      'command', 'codex',
+      'args', jsonb_build_array('exec', '--skip-git-repo-check', '--sandbox', 'read-only', '--color', 'never', '-o', '/tmp/codex_last_message.txt'),
+      'model_arg', '--model',
+      'upstream_model', 'gpt-5.3-codex',
+      'use_stdin_prompt', TRUE,
+      'force_stdin_prompt', TRUE,
+      'stdin_prompt_arg', '-',
+      'response_file', '/tmp/codex_last_message.txt',
+      'stream_arg', NULL,
+      'timeout_sec', 300
     ),
     TRUE
   ),
