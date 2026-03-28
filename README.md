@@ -1,16 +1,28 @@
 # Model Gateway v0.0.5
 
-基于 FastAPI 的模型网关，按 OpenAI 风格 `model` 名称进行强制路由，支持流式转发、管理接口与调用审计。
+基于 FastAPI 的 OpenAI 兼容模型网关。它的核心职责是把“上游只认一个入口”的调用请求，按 `model` 名精确路由到指定 provider，并保留可观测与可运营能力。
 
 **当前版本**: `v0.0.5`
 
-## 功能范围
+## 核心作用
+- 单入口统一多模型：上游系统只需维护一组 `BASE_URL + API_KEY`。
+- 强制路由与失败即失败：按 `model` 精确选路，不做隐式兜底，避免“悄悄换模型”。
+- 运行时可控：通过管理接口在线调整 provider 与 route，无需重发版。
+- 全链路审计：记录每次调用的路由链、选中 provider、耗时与 token 用量。
+
+## 接口能力
 - `POST /v1/chat/completions`（支持 `stream=true`）
 - `GET /healthz`
 - `GET/POST /admin/routes`
 - `GET /admin/calls`
 - `GET /admin/usage/summary`
 - `GET/POST /admin/providers`（可选，方便维护 provider 配置）
+
+## 请求链路（核心行为）
+1. 上游请求进入 `/v1/chat/completions`。
+2. 网关按请求里的 `model` 命中路由规则（`primary_provider`）。
+3. 网关调用对应 provider（如 `kimi_cli` / `codex_cli` / `qwen_api`）。
+4. 返回标准 OpenAI 风格响应，并落审计日志用于排障与计费统计。
 
 ## 快速开始
 1. 初始化数据库：
@@ -56,10 +68,14 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 - 将上游应用 `API_KEY` 设为 `GATEWAY_CLIENT_TOKEN`
 - `MODEL_NAME` 使用网关规则中的 OpenAI 风格模型名（如 `kimi-for-coding`、`codex-for-coding`、`qwen3.5-plus`）
 
-## StockAgents 示例
-- `BASE_URL`: `http://model-gateway:8080/v1`
-- `API_KEY`: `GATEWAY_CLIENT_TOKEN`
-- `MODEL_NAME`: `kimi-for-coding` / `codex-for-coding` / `qwen3.5-plus`
+## 上游通用示例
+```bash
+APP_MODEL_BASE_URL=http://model-gateway:8080/v1
+APP_MODEL_API_KEY=<GATEWAY_CLIENT_TOKEN>
+APP_MODEL_NAME=codex-for-coding
+```
+
+> 若同一应用内有多类任务，可按任务维度切换 `APP_MODEL_NAME`，其余连接参数保持不变。
 
 ## 版本历史
 - `v0.0.5` (2026-03-28): 统一为单 `codex_cli` + sub2api 配置方案，README 与示例环境变量改为项目内隔离目录写法，避免宿主机配置与隐私信息泄露。
