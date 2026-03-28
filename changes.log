@@ -129,3 +129,87 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Files: .env.example, Dockerfile, README.md, app/adapters/kimi_cli.py, app/main.py, docker-compose.yml, sql/init_model_gateway.sql, tests/test_kimi_cli_adapter.py, tests/test_main_helpers.py, changes.log
 - Verify: `. .venv/bin/activate && pytest -q` 17 passed
 - Next: None
+
+## [2026-03-28 13:24 +08:00] [Codex] [TASK-20260328-1324-codex-affinity-pool] [START]
+- Intent: 实现双 Codex 账号会话粘性负载（按 task_id 稳定分配）且不引入 fallback
+- Scope: 新增 codex provider pool 选择逻辑、双账号配置示例与文档、补充相关测试；失败即失败不切换账号
+- Files: app/main.py, sql/init_model_gateway.sql, docker-compose.yml, .env.example, README.md, tests/*, changes.log
+- Verify: 执行 pytest 覆盖粘性路由与失败路径
+- Next: 修改路由选择逻辑与配置模板后完成测试
+
+## [2026-03-28 13:33 +08:00] [Codex] [TASK-20260328-1324-codex-affinity-pool] [DONE]
+- Intent: 实现双 Codex 账号会话粘性负载（按 task_id 稳定分配）且不引入 fallback
+- Scope: 已完成 codex_pool 粘性选路、双账号 provider 配置模板、compose/env/doc 更新与测试补充；失败保持 fail-fast
+- Files: app/main.py, sql/init_model_gateway.sql, docker-compose.yml, .env.example, README.md, tests/test_main_helpers.py, changes.log
+- Verify: `. .venv/bin/activate && pytest -q` 20 passed
+- Next: None
+
+## [2026-03-28 13:49 +08:00] [Codex] [TASK-20260328-1349-sub2api-openai-provider] [START]
+- Intent: 接入 sub2api 作为单一 OpenAI 兼容上游，避免本地 codex 多账号目录切换复杂度
+- Scope: 新增 openai_api provider 映射与示例配置、更新文档接入步骤；不移除现有 codex_cli/codex_pool 逻辑
+- Files: app/main.py, sql/init_model_gateway.sql, README.md, tests/test_main_helpers.py, changes.log
+- Verify: 执行 pytest 并校验 openai_api 注册
+- Next: 完成 provider 别名与文档落地
+
+## [2026-03-28 13:55 +08:00] [Codex] [TASK-20260328-1349-sub2api-openai-provider] [DONE]
+- Intent: 接入 sub2api 作为单一 OpenAI 兼容上游，避免本地 codex 多账号目录切换复杂度
+- Scope: 已完成 openai_api provider 别名、初始化 SQL 示例与 README 接入说明；保留现有 codex_pool 方案供按需使用
+- Files: app/main.py, sql/init_model_gateway.sql, README.md, tests/test_main_helpers.py, changes.log
+- Verify: `. .venv/bin/activate && pytest -q` 20 passed
+- Next: None
+
+## [2026-03-28 14:04 +08:00] [Codex] [TASK-20260328-1404-sub2api-key-switch] [START]
+- Intent: 使用用户提供的 Sub2API key 将 codex-for-coding 切换为单一 openai_api 上游（gpt-5.3-codex + high）
+- Scope: 仅更新运行时 provider/route 配置并验证请求；不改业务代码与数据库结构
+- Files: changes.log
+- Verify: /admin/providers 与 /admin/routes 回读，/v1/chat/completions 验证
+- Next: 写入 provider/route 并做实际请求验证
+
+## [2026-03-28 14:12 +08:00] [Codex] [TASK-20260328-1404-sub2api-key-switch] [DONE]
+- Intent: 使用用户提供的 Sub2API key 将 codex-for-coding 切换为单一 openai_api 上游（gpt-5.3-codex + high）
+- Scope: 已完成 provider/route 运行时写入与验证；并补充 openai_api 强制字段能力（reasoning_effort=high）
+- Files: app/adapters/qwen_api.py, tests/test_qwen_api_adapter.py, sql/init_model_gateway.sql, README.md, changes.log
+- Verify: `. .venv/bin/activate && pytest -q` 21 passed；`/admin/providers` 回读 openai_api=`host.docker.internal:18080/v1`+`gpt-5.3-codex`+`reasoning_effort=high`；`/admin/routes` 回读 codex-for-coding->openai_api；真实调用返回 502，错误为上游 `403 INSUFFICIENT_BALANCE`
+- Next: 充值/更换可用 Sub2API key 后重试
+
+## [2026-03-28 14:22 +08:00] [Codex] [TASK-20260328-1422-isolated-codex-home] [START]
+- Intent: 按用户建议为容器创建隔离的 codex 配置目录（复制宿主机基础信息并写入 sub2api 配置），不影响宿主机 ~/.codex
+- Scope: 仅修改 runtime 下容器挂载目录与 .env 运行配置，并做容器内读取验证
+- Files: .env, changes.log（runtime/* 为忽略目录）
+- Verify: 容器内查看 /root/codex-home-a|b 下 config.toml 与 auth.json，执行 codex login status / codex exec 验证
+- Next: 生成隔离目录并验证
+
+## [2026-03-28 14:27 +08:00] [Codex] [TASK-20260328-1422-isolated-codex-home] [DONE]
+- Intent: 按用户建议为容器创建隔离的 codex 配置目录（复制宿主机基础信息并写入 sub2api 配置），不影响宿主机 ~/.codex
+- Scope: 已在 runtime/codex-home-a|b 写入独立 auth.json/config.toml，并将 .env 绑定到这两个目录；未修改宿主机 ~/.codex
+- Files: .env, changes.log（runtime/* 为忽略目录）
+- Verify: 容器内 `/root/codex-home-a|b` 均可读到配置；宿主机 `~/.codex/config.toml` 仍为原内容；`codex exec` 使用该 key 时仍受上游额度限制/鉴权行为影响
+- Next: 若继续走 codex_cli 通道，建议改为在 provider env 显式注入 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL` 规避不同版本 CLI 对配置文件解析差异
+
+## [2026-03-28 14:33 +08:00] [Codex] [TASK-20260328-1433-rollback-single-codex-sub2api] [START]
+- Intent: 回退到单 codex_cli 架构并按 sub2api 方案使用单 API key + 容器隔离配置目录
+- Scope: 代码回退至 v0.0.4 单 codex_cli 形态，写入 runtime/codex-home-sub2api 的 config/auth，切换运行路由到 codex_cli；不修改宿主机 ~/.codex
+- Files: changes.log, .env（runtime/* 为忽略目录）
+- Verify: 容器内 /root/.codex 配置核验、/admin providers/routes 回读、/v1/chat/completions 验证
+- Next: 写入隔离配置并切换运行路由
+
+## [2026-03-28 14:37 +08:00] [Codex] [TASK-20260328-1433-rollback-single-codex-sub2api] [DONE]
+- Intent: 回退到单 codex_cli 架构并按 sub2api 方案使用单 API key + 容器隔离配置目录
+- Scope: 已回退代码到 v0.0.4 单 codex_cli 形态，容器改挂载 `runtime/codex-home-sub2api -> /root/.codex`，并将运行路由切换为 codex_cli；宿主机 ~/.codex 未改动
+- Files: changes.log, .env（runtime/* 为忽略目录）
+- Verify: `. .venv/bin/activate && pytest -q` 17 passed；`docker inspect` 显示 `/root/.codex` 来自项目 runtime；`/admin/routes` 回读 codex-for-coding->codex_cli；真实调用命中 codex_cli 且 `reasoning effort: high`，上游返回 403（余额不足）
+- Next: 给 sub2api key 充值/更换可用 key 后重试
+
+## [2026-03-28 14:18 +08:00] [Codex] [TASK-20260328-1418-release-v0.0.5-doc-sanitize] [START]
+- Intent: 发布新版本并同步 README，确保示例配置不包含隐私信息
+- Scope: 更新版本号与版本历史，校验 README 与 compose/.env.example 一致性，清理可再生缓存；不改业务逻辑
+- Files: README.md, .env.example, changes.log
+- Verify: `. .venv/bin/activate && pytest -q`，并检查 git tag
+- Next: 完成文档与版本更新后执行验证与打标
+
+## [2026-03-28 14:20 +08:00] [Codex] [TASK-20260328-1418-release-v0.0.5-doc-sanitize] [DONE]
+- Intent: 发布新版本并同步 README，确保示例配置不包含隐私信息
+- Scope: 已完成版本号升级、README 发版说明与隐私脱敏、.env.example 示例路径更新；未改业务逻辑
+- Files: README.md, .env.example, changes.log
+- Verify: `. .venv/bin/activate && pytest -q` => `17 passed in 0.90s`；`git tag -n | grep v0.0.5`（已创建后校验）
+- Next: None
