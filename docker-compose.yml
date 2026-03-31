@@ -12,9 +12,23 @@ services:
     volumes:
       - ${KIMI_HOME_DIR:-./runtime/kimi-home}:/root/.kimi
       - ${CODEX_HOME_DIR:-./runtime/codex-home}:/root/.codex
+      - ./app:/app/app:ro
     networks:
       - gateway_shared
       - gateway_db
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ${GATEWAY_CONTAINER_NAME:-model-gateway}-ui
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_UI_PORT:-3001}:80"
+    networks:
+      - gateway_shared
+    depends_on:
+      - model-gateway
 
 networks:
   gateway_shared:

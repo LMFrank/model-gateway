@@ -186,6 +186,13 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Verify: 容器内 `/root/codex-home-a|b` 均可读到配置；宿主机 `~/.codex/config.toml` 仍为原内容；`codex exec` 使用该 key 时仍受上游额度限制/鉴权行为影响
 - Next: 若继续走 codex_cli 通道，建议改为在 provider env 显式注入 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL` 规避不同版本 CLI 对配置文件解析差异
 
+## [2026-03-31 12:30 +08:00] [OpenCode] [TASK-20260331-1230-build-fix] [DONE]
+- Intent: 修复 Docker build 问题并完成剩余任务（Phase 2 健康检查 + Phase 4 API 加密）
+- Scope: 修复镜像源 403/kimi-cli Python 版本兼容问题，完成 health_checks 表/API，添加 Fernet 加密模块与迁移脚本
+- Files: Dockerfile, frontend/Dockerfile, requirements.txt, app/repository.py, app/main.py, app/config.py, app/crypto.py, sql/migrations/v0.2.0_health_checks.sql, scripts/encrypt_api_keys.py, docker-compose.yml, changes.log
+- Verify: `docker compose up -d --build` 成功；`curl /api/health/summary` 返回正确；`. .venv/bin/activate && pytest -q` 17 passed
+- Next: None
+
 ## [2026-03-28 14:33 +08:00] [Codex] [TASK-20260328-1433-rollback-single-codex-sub2api] [START]
 - Intent: 回退到单 codex_cli 架构并按 sub2api 方案使用单 API key + 容器隔离配置目录
 - Scope: 代码回退至 v0.0.4 单 codex_cli 形态，写入 runtime/codex-home-sub2api 的 config/auth，切换运行路由到 codex_cli；不修改宿主机 ~/.codex
@@ -226,4 +233,87 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Scope: 已移除业务专名示例，补充核心作用与请求链路说明；未改接口/代码行为
 - Files: README.md, changes.log
 - Verify: `rg -n "StockAgents|上游通用示例|核心作用|请求链路" README.md`；`. .venv/bin/activate && pytest -q` => `17 passed in 0.56s`
+- Next: None
+
+## [2026-03-29 21:01 +08:00] [Codex] [TASK-20260329-2101-global-agents-add-project] [START]
+- Intent: 将当前项目补充到 Codex 全局 `~/.codex/AGENTS.md`
+- Scope: 仅更新全局 AGENTS 的项目映射/说明并记录协作日志；不改业务代码
+- Files: /Users/xushuchi/.codex/AGENTS.md, changes.log
+- Verify: 读取全局 AGENTS 目标段落确认新增项目条目
+- Next: 编辑全局 AGENTS 并完成校验
+
+## [2026-03-29 21:03 +08:00] [Codex] [TASK-20260329-2101-global-agents-add-project] [DONE]
+- Intent: 将当前项目补充到 Codex 全局 `~/.codex/AGENTS.md`
+- Scope: 已更新全局 AGENTS 项目映射并新增 context 项目文档；未改业务代码
+- Files: /Users/xushuchi/.codex/AGENTS.md, /Users/xushuchi/Library/CloudStorage/OneDrive-个人/context/projects/model-gateway.md, changes.log
+- Verify: `rg -n "model-gateway|gateway|mgw" /Users/xushuchi/.codex/AGENTS.md` 命中映射；`sed -n '1,240p' /Users/xushuchi/Library/CloudStorage/OneDrive-个人/context/projects/model-gateway.md` 可读
+- Next: None
+
+
+## [2026-03-31 09:53 +08:00] [Kimi] [TASK-20260331-0953-db-schema-refactor] [DONE]
+- Intent: 重构数据库 schema，支持统一配置中心架构（providers/models/route_rules 新表结构）
+- Scope: 已完成 migration SQL、repository.py 重构（新增 Provider/Model/Route v2 CRUD）、schemas.py 更新、main.py 新增 Admin API v2；保持旧 API 向后兼容
+- Files: sql/migrations/v0.1.0_schema_refactor.sql, app/repository.py, app/schemas.py, app/main.py
+- Verify: `python -c "from app.main import create_app; from app.repository import PostgresRepository; from app.schemas import *; print(Import OK)"` 成功
+- Next: 运行 pytest 验证所有测试通过后执行数据库迁移
+
+
+## [2026-03-31 10:00 +08:00] [Kimi] [TASK-20260331-1000-db-migration-verify] [DONE]
+- Intent: 执行数据库迁移并验证新表结构和数据完整性
+- Scope: 在 Docker PostgreSQL 中执行 v0.1.0_schema_refactor.sql，验证 providers(5)/models(3)/route_rules_v2(3) 表创建和数据迁移成功
+- Files: changes.log（日志记录）
+- Verify: `docker exec pg psql -c "SELECT COUNT(*) FROM providers/models/route_rules_v2"` 分别返回 5/3/3；所有数据正确迁移（如 kimi-for-coding -> kimi_cli）
+- Next: 启动应用测试新 Admin API 端点
+
+
+## [2026-03-31 10:05 +08:00] [Kimi] [TASK-20260331-1005-api-verify] [DONE]
+- Intent: 验证新 Admin API 端点和向后兼容性
+- Scope: 已测试 /api/providers、/api/models、/api/routes 新端点工作正常；旧 /admin/routes、/admin/providers、/v1/chat/completions 保持向后兼容
+- Files: changes.log（日志记录）
+- Verify: `curl /api/providers` 返回 5 个 provider；`curl /api/models` 返回 3 个 model；`curl /v1/chat/completions`(model=kimi-for-coding) 返回 200 且内容正常
+- Next: 阶段1完成，可进入阶段2（健康检查系统）或阶段3（Vue3前端）
+
+
+## [2026-03-31 10:50 +08:00] [Kimi] [TASK-20260331-1050-vue-frontend] [DONE]
+- Intent: 完成 Vue 3 + Element Plus 前端项目搭建和核心功能页面
+- Scope: 已创建 Provider/Model/Route/Usage/Dashboard 页面，配置 nginx 代理，更新 docker-compose 添加 frontend 服务
+- Files: frontend/* (完整 Vue 3 项目), docker-compose.yml
+- Verify: `npm run build` 成功生成 dist/；目录结构包含 5 个视图页面、3 个 API 模块、完整路由配置
+- Next: 构建并启动 frontend 容器验证 UI 访问
+
+## [2026-03-31 11:00 +08:00] [Kimi] [TASK-20260331-1100-frontend-deploy] [BLOCKED]
+- Intent: 启动前端容器并用 Playwright 验证 UI
+- Scope: 已完成前端构建（dist/），配置 nginx 代理，更新 docker-compose.yml；Docker build 因镜像源 403 Forbidden 失败
+- Files: frontend/Dockerfile, frontend/nginx.conf, docker-compose.yml, changes.log
+- Verify: `npm run build` 成功；`docker compose up -d --build frontend` 失败（镜像拉取超时）
+- Blocker: Docker 镜像源 td01ksqv.mirror.aliyuncs.com 返回 403 Forbidden，无法拉取 nginx:alpine 和 python:3.12-slim
+- Next: 切换可用的 Docker 镜像源或使用本地已有镜像；若镜像源恢复后执行 `docker compose up -d --build frontend`
+
+## [2026-03-31 14:30 +08:00] [OpenCode] [TASK-20260331-1430-providers-models-expansion] [DONE]
+- Intent: 扩展 providers 和 models 配置，对接 StockAgents 项目中使用的所有模型
+- Intent: 添加前端测试功能（Provider 健康检查、Model 测试调用）
+- Scope: 新增 3 个 providers（bailian_coding_api、bailian_api、deepseek_api）、10 个 models；修复 adapter 未使用 upstream_model 的问题；前端添加测试按钮；安装 kimi-cli 到容器
+- Files: sql/migrations/v0.3.0_add_providers_models.sql, app/main.py, requirements.txt, frontend/src/api/providers.ts, frontend/src/api/models.ts, frontend/src/views/Providers.vue, frontend/src/views/Models.vue, changes.log
+- Verify: `curl /api/providers` 返回 6 个；`curl /api/models` 返回 13 个；`curl /v1/chat/completions`(model=qwen3-max) 返回正常；`curl /v1/chat/completions`(model=kimi-for-coding) 返回正常
+- Next: None
+
+## [2026-03-31 16:00 +08:00] [OpenCode] [TASK-20260331-1600-release-v0.1.0] [DONE]
+- Intent: 发布 v0.1.0 版本，完善文档支持其他项目接入
+- Scope: 更新 README、新增接入文档 docs/integration.md、发布 release
+- Files: README.md, docs/integration.md, changes.log
+- Verify: `pytest -q` 11 passed；`git tag v0.1.0` 创建成功
+- Next: None
+
+## [2026-03-31 17:00 +08:00] [OpenCode] [TASK-20260331-1700-readme-update] [DONE]
+- Intent: 优化 README 痛点描述，添加使用声明
+- Scope: 更新 README 痛点说明（多项目重复建设问题）、添加个人学习声明、更新 git clone URL
+- Files: README.md, changes.log
+- Verify: `git push` 成功
+- Next: None
+
+## [2026-03-31 18:00 +08:00] [OpenCode] [TASK-20260331-1800-dynamic-discovery-doc] [DONE]
+- Intent: 补充动态发现模型 API 的使用文档
+- Scope: 在 docs/integration.md 和 README.md 中添加动态发现模型的说明和示例代码
+- Files: docs/integration.md, README.md, changes.log
+- Verify: 文档更新完成
 - Next: None

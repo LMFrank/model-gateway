@@ -5,7 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     app_name: str = "model-gateway"
     app_env: str = "dev"
@@ -17,12 +19,27 @@ class Settings(BaseSettings):
     gateway_client_token: str = Field(default="", alias="GATEWAY_CLIENT_TOKEN")
     gateway_admin_token: str = Field(default="", alias="GATEWAY_ADMIN_TOKEN")
 
-    pg_host: str = Field(default="pg", validation_alias=AliasChoices("PG_HOST", "MYSQL_HOST"))
-    pg_port: int = Field(default=5432, validation_alias=AliasChoices("PG_PORT", "MYSQL_PORT"))
-    pg_user: str = Field(default="model_gateway_user", validation_alias=AliasChoices("PG_USER", "MYSQL_USER"))
-    pg_password: str = Field(default="", validation_alias=AliasChoices("PG_PASSWORD", "MYSQL_PASSWORD"))
-    pg_database: str = Field(default="model_gateway", validation_alias=AliasChoices("PG_DATABASE", "MYSQL_DATABASE"))
-    pg_connect_timeout: int = Field(default=5, validation_alias=AliasChoices("PG_CONNECT_TIMEOUT", "MYSQL_CONNECT_TIMEOUT"))
+    pg_host: str = Field(
+        default="pg", validation_alias=AliasChoices("PG_HOST", "MYSQL_HOST")
+    )
+    pg_port: int = Field(
+        default=5432, validation_alias=AliasChoices("PG_PORT", "MYSQL_PORT")
+    )
+    pg_user: str = Field(
+        default="model_gateway_user",
+        validation_alias=AliasChoices("PG_USER", "MYSQL_USER"),
+    )
+    pg_password: str = Field(
+        default="", validation_alias=AliasChoices("PG_PASSWORD", "MYSQL_PASSWORD")
+    )
+    pg_database: str = Field(
+        default="model_gateway",
+        validation_alias=AliasChoices("PG_DATABASE", "MYSQL_DATABASE"),
+    )
+    pg_connect_timeout: int = Field(
+        default=5,
+        validation_alias=AliasChoices("PG_CONNECT_TIMEOUT", "MYSQL_CONNECT_TIMEOUT"),
+    )
 
     qwen_timeout_sec: int = Field(default=120, alias="QWEN_TIMEOUT_SEC")
     kimi_timeout_sec: int = Field(default=120, alias="KIMI_TIMEOUT_SEC")
@@ -30,6 +47,9 @@ class Settings(BaseSettings):
 
     default_page_limit: int = 100
     max_page_limit: int = 500
+
+    api_key_encryption_key: str = Field(default="", alias="API_KEY_ENCRYPTION_KEY")
+    encrypt_api_keys: bool = Field(default=False, alias="ENCRYPT_API_KEYS")
 
 
 @lru_cache
