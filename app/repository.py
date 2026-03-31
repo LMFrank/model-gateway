@@ -96,95 +96,75 @@ class PostgresRepository:
         except Exception:
             return False
 
-    def get_route_rule(self, model_name: str) -> dict[str, Any] | None:
+    # ==========================================================================
+    # Provider CRUD (New Schema)
+    # ==========================================================================
+
+    def get_provider(self, provider_id: int) -> dict[str, Any] | None:
+        """根据 ID 获取 Provider"""
         sql = """
-        SELECT model_name, primary_provider, fallback_provider, is_enabled, description, created_at, updated_at
-        FROM route_rules
-        WHERE model_name = %s
+        SELECT id, name, display_name, provider_type, base_url, api_key, 
+               config_json, description, is_enabled, created_at, updated_at
+        FROM providers
+        WHERE id = %s
         LIMIT 1
         """
         with self._get_conn() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(sql, (model_name,))
+                cursor.execute(sql, (provider_id,))
                 row = cursor.fetchone()
         if not row:
             return None
-        row["is_enabled"] = bool(row.get("is_enabled", True))
-        return row
-
-    def list_route_rules(self) -> list[dict[str, Any]]:
-        sql = """
-        SELECT model_name, primary_provider, fallback_provider, is_enabled, description, created_at, updated_at
-        FROM route_rules
-        ORDER BY model_name ASC
-        """
-        with self._get_conn() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(sql)
-                rows = cursor.fetchall()
-        for row in rows:
-            row["is_enabled"] = bool(row.get("is_enabled", True))
-        return rows
-
-    def upsert_route_rules(self, rules: list[dict[str, Any]]) -> int:
-        if not rules:
-            return 0
-
-        sql = """
-        INSERT INTO route_rules (model_name, primary_provider, fallback_provider, is_enabled, description)
-        VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (model_name) DO UPDATE SET
-            primary_provider = EXCLUDED.primary_provider,
-            fallback_provider = EXCLUDED.fallback_provider,
-            is_enabled = EXCLUDED.is_enabled,
-            description = EXCLUDED.description,
-            updated_at = NOW()
-        """
-
-        values = [
-            (
-                item["model_name"],
-                item["primary_provider"],
-                item.get("fallback_provider"),
-                bool(item.get("is_enabled", True)),
-                item.get("description"),
-            )
-            for item in rules
-        ]
-
-        with self._get_conn() as conn:
-            with conn.cursor() as cursor:
-                cursor.executemany(sql, values)
-        return len(values)
-
-    def get_provider_config(self, provider_name: str) -> dict[str, Any] | None:
-        sql = """
-        SELECT provider_name, config_json, is_enabled, created_at, updated_at
-        FROM provider_configs
-        WHERE provider_name = %s
-        LIMIT 1
-        """
-        with self._get_conn() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, (provider_name,))
-                row = cursor.fetchone()
-
-        if not row:
-            return None
-
         return {
-            "provider_name": row["provider_name"],
+            "id": row["id"],
+            "name": row["name"],
+            "display_name": row["display_name"],
+            "provider_type": row["provider_type"],
+            "base_url": row["base_url"],
+            "api_key": row["api_key"],
             "config": self._json_load(row.get("config_json")) or {},
+            "description": row["description"],
             "is_enabled": bool(row.get("is_enabled", True)),
             "created_at": row.get("created_at"),
             "updated_at": row.get("updated_at"),
         }
 
-    def list_provider_configs(self) -> list[dict[str, Any]]:
+    def get_provider_by_name(self, name: str) -> dict[str, Any] | None:
+        """根据名称获取 Provider"""
         sql = """
-        SELECT provider_name, config_json, is_enabled, created_at, updated_at
-        FROM provider_configs
-        ORDER BY provider_name ASC
+        SELECT id, name, display_name, provider_type, base_url, api_key, 
+               config_json, description, is_enabled, created_at, updated_at
+        FROM providers
+        WHERE name = %s
+        LIMIT 1
+        """
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (name,))
+                row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "display_name": row["display_name"],
+            "provider_type": row["provider_type"],
+            "base_url": row["base_url"],
+            "api_key": row["api_key"],
+            "config": self._json_load(row.get("config_json")) or {},
+            "description": row["description"],
+            "is_enabled": bool(row.get("is_enabled", True)),
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        }
+
+    def list_providers(self) -> list[dict[str, Any]]:
+        """列出所有 Providers"""
+        sql = """
+        SELECT id, name, display_name, provider_type, base_url, api_key, 
+               config_json, description, is_enabled, created_at, updated_at
+        FROM providers
+        ORDER BY name ASC
         """
         with self._get_conn() as conn:
             with conn.cursor() as cursor:
@@ -195,8 +175,14 @@ class PostgresRepository:
         for row in rows:
             out.append(
                 {
-                    "provider_name": row["provider_name"],
+                    "id": row["id"],
+                    "name": row["name"],
+                    "display_name": row["display_name"],
+                    "provider_type": row["provider_type"],
+                    "base_url": row["base_url"],
+                    "api_key": row["api_key"],
                     "config": self._json_load(row.get("config_json")) or {},
+                    "description": row["description"],
                     "is_enabled": bool(row.get("is_enabled", True)),
                     "created_at": row.get("created_at"),
                     "updated_at": row.get("updated_at"),
@@ -204,32 +190,468 @@ class PostgresRepository:
             )
         return out
 
-    def upsert_provider_configs(self, providers: list[dict[str, Any]]) -> int:
-        if not providers:
+    def create_provider(self, data: dict[str, Any]) -> int:
+        """创建 Provider"""
+        sql = """
+        INSERT INTO providers (name, display_name, provider_type, base_url, api_key, 
+                               config_json, description, is_enabled)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+        """
+        values = (
+            data["name"],
+            data["display_name"],
+            data["provider_type"],
+            data.get("base_url"),
+            data.get("api_key"),
+            self._to_json_param(self._safe_json_value(data.get("config", {}))),
+            data.get("description"),
+            bool(data.get("is_enabled", True)),
+        )
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, values)
+                row = cursor.fetchone()
+                return int(row["id"])
+
+    def update_provider(self, provider_id: int, data: dict[str, Any]) -> bool:
+        """更新 Provider"""
+        fields = []
+        values = []
+
+        if "display_name" in data:
+            fields.append("display_name = %s")
+            values.append(data["display_name"])
+        if "provider_type" in data:
+            fields.append("provider_type = %s")
+            values.append(data["provider_type"])
+        if "base_url" in data:
+            fields.append("base_url = %s")
+            values.append(data["base_url"])
+        if "api_key" in data:
+            fields.append("api_key = %s")
+            values.append(data["api_key"])
+        if "config" in data:
+            fields.append("config_json = %s")
+            values.append(self._to_json_param(self._safe_json_value(data["config"])))
+        if "description" in data:
+            fields.append("description = %s")
+            values.append(data["description"])
+        if "is_enabled" in data:
+            fields.append("is_enabled = %s")
+            values.append(bool(data["is_enabled"]))
+
+        if not fields:
+            return False
+
+        fields.append("updated_at = NOW()")
+        values.append(provider_id)
+
+        sql = f"UPDATE providers SET {', '.join(fields)} WHERE id = %s"
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, tuple(values))
+                return cursor.rowcount > 0
+
+    def delete_provider(self, provider_id: int) -> bool:
+        """删除 Provider"""
+        sql = "DELETE FROM providers WHERE id = %s"
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (provider_id,))
+                return cursor.rowcount > 0
+
+    # ==========================================================================
+    # Model CRUD (New Schema)
+    # ==========================================================================
+
+    def get_model(self, model_id: int) -> dict[str, Any] | None:
+        """根据 ID 获取 Model"""
+        sql = """
+        SELECT m.id, m.model_key, m.display_name, m.upstream_model, m.default_params,
+               m.description, m.notes, m.is_active, m.health_status, m.last_health_check,
+               m.created_at, m.updated_at,
+               p.id as provider_id, p.name as provider_name, p.display_name as provider_display_name
+        FROM models m
+        JOIN providers p ON m.provider_id = p.id
+        WHERE m.id = %s
+        LIMIT 1
+        """
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (model_id,))
+                row = cursor.fetchone()
+        if not row:
+            return None
+        return self._model_row_to_dict(row)
+
+    def get_model_by_key(self, model_key: str) -> dict[str, Any] | None:
+        """根据 model_key 获取 Model"""
+        sql = """
+        SELECT m.id, m.model_key, m.display_name, m.upstream_model, m.default_params,
+               m.description, m.notes, m.is_active, m.health_status, m.last_health_check,
+               m.created_at, m.updated_at,
+               p.id as provider_id, p.name as provider_name, p.display_name as provider_display_name
+        FROM models m
+        JOIN providers p ON m.provider_id = p.id
+        WHERE m.model_key = %s
+        LIMIT 1
+        """
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (model_key,))
+                row = cursor.fetchone()
+        if not row:
+            return None
+        return self._model_row_to_dict(row)
+
+    def list_models(self, provider_id: int | None = None) -> list[dict[str, Any]]:
+        """列出所有 Models，可按 Provider 筛选"""
+        sql = """
+        SELECT m.id, m.model_key, m.display_name, m.upstream_model, m.default_params,
+               m.description, m.notes, m.is_active, m.health_status, m.last_health_check,
+               m.created_at, m.updated_at,
+               p.id as provider_id, p.name as provider_name, p.display_name as provider_display_name
+        FROM models m
+        JOIN providers p ON m.provider_id = p.id
+        """
+        params = []
+        if provider_id:
+            sql += " WHERE m.provider_id = %s"
+            params.append(provider_id)
+        sql += " ORDER BY m.model_key ASC"
+
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, tuple(params))
+                rows = cursor.fetchall()
+
+        return [self._model_row_to_dict(row) for row in rows]
+
+    def create_model(self, data: dict[str, Any]) -> int:
+        """创建 Model"""
+        sql = """
+        INSERT INTO models (provider_id, model_key, display_name, upstream_model, 
+                            default_params, description, notes, is_active)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+        """
+        values = (
+            data["provider_id"],
+            data["model_key"],
+            data["display_name"],
+            data["upstream_model"],
+            self._to_json_param(self._safe_json_value(data.get("default_params", {}))),
+            data.get("description"),
+            data.get("notes"),
+            bool(data.get("is_active", True)),
+        )
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, values)
+                row = cursor.fetchone()
+                return int(row["id"])
+
+    def update_model(self, model_id: int, data: dict[str, Any]) -> bool:
+        """更新 Model"""
+        fields = []
+        values = []
+
+        if "provider_id" in data:
+            fields.append("provider_id = %s")
+            values.append(data["provider_id"])
+        if "display_name" in data:
+            fields.append("display_name = %s")
+            values.append(data["display_name"])
+        if "upstream_model" in data:
+            fields.append("upstream_model = %s")
+            values.append(data["upstream_model"])
+        if "default_params" in data:
+            fields.append("default_params = %s")
+            values.append(
+                self._to_json_param(self._safe_json_value(data["default_params"]))
+            )
+        if "description" in data:
+            fields.append("description = %s")
+            values.append(data["description"])
+        if "notes" in data:
+            fields.append("notes = %s")
+            values.append(data["notes"])
+        if "is_active" in data:
+            fields.append("is_active = %s")
+            values.append(bool(data["is_active"]))
+        if "health_status" in data:
+            fields.append("health_status = %s")
+            values.append(data["health_status"])
+            fields.append("last_health_check = NOW()")
+
+        if not fields:
+            return False
+
+        fields.append("updated_at = NOW()")
+        values.append(model_id)
+
+        sql = f"UPDATE models SET {', '.join(fields)} WHERE id = %s"
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, tuple(values))
+                return cursor.rowcount > 0
+
+    def delete_model(self, model_id: int) -> bool:
+        """删除 Model"""
+        sql = "DELETE FROM models WHERE id = %s"
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (model_id,))
+                return cursor.rowcount > 0
+
+    def _model_row_to_dict(self, row: dict[str, Any]) -> dict[str, Any]:
+        """将 Model 查询结果转换为字典"""
+        return {
+            "id": row["id"],
+            "model_key": row["model_key"],
+            "display_name": row["display_name"],
+            "upstream_model": row["upstream_model"],
+            "default_params": self._json_load(row.get("default_params")) or {},
+            "description": row["description"],
+            "notes": row["notes"],
+            "is_active": bool(row.get("is_active", True)),
+            "health_status": row.get("health_status", "unknown"),
+            "last_health_check": row.get("last_health_check"),
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+            "provider": {
+                "id": row["provider_id"],
+                "name": row["provider_name"],
+                "display_name": row["provider_display_name"],
+            }
+            if row.get("provider_id")
+            else None,
+        }
+
+    # ==========================================================================
+    # Route Rules (New Schema - v2)
+    # ==========================================================================
+
+    def get_route_rule_v2(self, model_key: str) -> dict[str, Any] | None:
+        """根据 model_key 获取路由规则 (v2)"""
+        sql = """
+        SELECT r.model_key, r.is_enabled, r.priority, r.description, 
+               r.created_at, r.updated_at,
+               m.id as model_id, m.display_name as model_display_name, 
+               m.upstream_model, m.is_active as model_is_active,
+               p.id as provider_id, p.name as provider_name, p.provider_type
+        FROM route_rules_v2 r
+        JOIN models m ON r.model_key = m.model_key
+        JOIN providers p ON m.provider_id = p.id
+        WHERE r.model_key = %s
+        LIMIT 1
+        """
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (model_key,))
+                row = cursor.fetchone()
+        if not row:
+            return None
+        return self._route_v2_row_to_dict(row)
+
+    def list_route_rules_v2(self) -> list[dict[str, Any]]:
+        """列出所有路由规则 (v2)"""
+        sql = """
+        SELECT r.model_key, r.is_enabled, r.priority, r.description, 
+               r.created_at, r.updated_at,
+               m.id as model_id, m.display_name as model_display_name, 
+               m.upstream_model, m.is_active as model_is_active,
+               p.id as provider_id, p.name as provider_name, p.provider_type
+        FROM route_rules_v2 r
+        JOIN models m ON r.model_key = m.model_key
+        JOIN providers p ON m.provider_id = p.id
+        ORDER BY r.priority DESC, r.model_key ASC
+        """
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql)
+                rows = cursor.fetchall()
+        return [self._route_v2_row_to_dict(row) for row in rows]
+
+    def upsert_route_rules_v2(self, rules: list[dict[str, Any]]) -> int:
+        """批量增改路由规则 (v2)"""
+        if not rules:
             return 0
 
         sql = """
-        INSERT INTO provider_configs (provider_name, config_json, is_enabled)
-        VALUES (%s, %s, %s)
-        ON CONFLICT (provider_name) DO UPDATE SET
-            config_json = EXCLUDED.config_json,
+        INSERT INTO route_rules_v2 (model_key, is_enabled, priority, description)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (model_key) DO UPDATE SET
             is_enabled = EXCLUDED.is_enabled,
+            priority = EXCLUDED.priority,
+            description = EXCLUDED.description,
             updated_at = NOW()
         """
 
         values = [
             (
-                item["provider_name"],
-                self._to_json_param(self._safe_json_value(item.get("config", {}))),
+                item["model_key"],
                 bool(item.get("is_enabled", True)),
+                int(item.get("priority", 0)),
+                item.get("description"),
             )
-            for item in providers
+            for item in rules
         ]
 
         with self._get_conn() as conn:
             with conn.cursor() as cursor:
                 cursor.executemany(sql, values)
         return len(values)
+
+    def delete_route_rule_v2(self, model_key: str) -> bool:
+        """删除路由规则 (v2)"""
+        sql = "DELETE FROM route_rules_v2 WHERE model_key = %s"
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (model_key,))
+                return cursor.rowcount > 0
+
+    def _route_v2_row_to_dict(self, row: dict[str, Any]) -> dict[str, Any]:
+        """将路由规则 v2 查询结果转换为字典"""
+        return {
+            "model_key": row["model_key"],
+            "is_enabled": bool(row.get("is_enabled", True)),
+            "priority": int(row.get("priority", 0)),
+            "description": row["description"],
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+            "model": {
+                "id": row["model_id"],
+                "display_name": row["model_display_name"],
+                "upstream_model": row["upstream_model"],
+                "is_active": bool(row.get("model_is_active", True)),
+            },
+            "provider": {
+                "id": row["provider_id"],
+                "name": row["provider_name"],
+                "provider_type": row["provider_type"],
+            },
+        }
+
+    # ==========================================================================
+    # Backward Compatible Methods (Legacy)
+    # ==========================================================================
+
+    def get_route_rule(self, model_name: str) -> dict[str, Any] | None:
+        """根据模型名获取路由规则 (Legacy - 使用 v2 表)"""
+        rule = self.get_route_rule_v2(model_name)
+        if not rule:
+            return None
+        # 转换为旧格式以保持兼容
+        return {
+            "model_name": rule["model_key"],
+            "primary_provider": rule["provider"]["name"]
+            if rule.get("provider")
+            else None,
+            "fallback_provider": None,  # v2 不支持 fallback
+            "is_enabled": rule["is_enabled"] and rule["model"]["is_active"],
+            "description": rule["description"],
+            "created_at": rule["created_at"],
+            "updated_at": rule["updated_at"],
+        }
+
+    def list_route_rules(self) -> list[dict[str, Any]]:
+        """列出所有路由规则 (Legacy - 使用 v2 表)"""
+        rules = self.list_route_rules_v2()
+        return [
+            {
+                "model_name": rule["model_key"],
+                "primary_provider": rule["provider"]["name"]
+                if rule.get("provider")
+                else None,
+                "fallback_provider": None,
+                "is_enabled": rule["is_enabled"] and rule["model"]["is_active"],
+                "description": rule["description"],
+                "created_at": rule["created_at"],
+                "updated_at": rule["updated_at"],
+            }
+            for rule in rules
+        ]
+
+    def upsert_route_rules(self, rules: list[dict[str, Any]]) -> int:
+        """批量增改路由规则 (Legacy - 重定向到 v2)"""
+        # 将旧格式转换为 v2 格式
+        v2_rules = []
+        for rule in rules:
+            v2_rules.append(
+                {
+                    "model_key": rule["model_name"],
+                    "is_enabled": bool(rule.get("is_enabled", True)),
+                    "priority": 0,
+                    "description": rule.get("description"),
+                }
+            )
+            # Note: primary_provider/fallback_provider 需要通过 model 表关联
+        return self.upsert_route_rules_v2(v2_rules)
+
+    def get_provider_config(self, provider_name: str) -> dict[str, Any] | None:
+        """获取 Provider 配置 (Legacy - 使用新 providers 表)"""
+        provider = self.get_provider_by_name(provider_name)
+        if not provider:
+            return None
+
+        # 转换为旧格式
+        config = provider.get("config", {}).copy()
+        config["base_url"] = provider.get("base_url")
+        config["api_key"] = provider.get("api_key")
+
+        return {
+            "provider_name": provider["name"],
+            "config": config,
+            "is_enabled": provider["is_enabled"],
+            "created_at": provider["created_at"],
+            "updated_at": provider["updated_at"],
+        }
+
+    def list_provider_configs(self) -> list[dict[str, Any]]:
+        """列出所有 Provider 配置 (Legacy - 使用新 providers 表)"""
+        providers = self.list_providers()
+        out = []
+        for provider in providers:
+            config = provider.get("config", {}).copy()
+            config["base_url"] = provider.get("base_url")
+            config["api_key"] = provider.get("api_key")
+            out.append(
+                {
+                    "provider_name": provider["name"],
+                    "config": config,
+                    "is_enabled": provider["is_enabled"],
+                    "created_at": provider["created_at"],
+                    "updated_at": provider["updated_at"],
+                }
+            )
+        return out
+
+    def upsert_provider_configs(self, providers: list[dict[str, Any]]) -> int:
+        """批量增改 Provider 配置 (Legacy - 重定向到新方法)"""
+        for item in providers:
+            name = item["provider_name"]
+            existing = self.get_provider_by_name(name)
+            config = item.get("config", {})
+            data = {
+                "name": name,
+                "display_name": name,
+                "provider_type": "api" if name.endswith("_api") else "cli",
+                "base_url": config.get("base_url"),
+                "api_key": config.get("api_key"),
+                "config": config,
+                "is_enabled": bool(item.get("is_enabled", True)),
+            }
+            if existing:
+                self.update_provider(existing["id"], data)
+            else:
+                self.create_provider(data)
+        return len(providers)
+
+    # ==========================================================================
+    # Call Logs
+    # ==========================================================================
 
     def insert_call_log(self, log_data: dict[str, Any]) -> int:
         sql = """
@@ -348,7 +770,9 @@ class PostgresRepository:
 
         return {"total": total, "items": items}
 
-    def get_usage_summary(self, date_from: date | None = None, date_to: date | None = None) -> dict[str, Any]:
+    def get_usage_summary(
+        self, date_from: date | None = None, date_to: date | None = None
+    ) -> dict[str, Any]:
         if date_to is None:
             date_to = date.today()
         if date_from is None:
@@ -371,7 +795,9 @@ class PostgresRepository:
         total_calls = len(rows)
         failed_calls = sum(1 for row in rows if row.get("status") != "success")
         total_tokens = sum(int(row.get("total_tokens") or 0) for row in rows)
-        all_latencies = [int(row["latency_ms"]) for row in rows if row.get("latency_ms") is not None]
+        all_latencies = [
+            int(row["latency_ms"]) for row in rows if row.get("latency_ms") is not None
+        ]
 
         by_model: dict[str, list[dict[str, Any]]] = defaultdict(list)
         by_provider: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -380,13 +806,19 @@ class PostgresRepository:
             by_model[str(row.get("model_name") or "unknown")].append(row)
             by_provider[str(row.get("selected_provider") or "unknown")].append(row)
 
-        def _build_group(items: dict[str, list[dict[str, Any]]], key_name: str) -> list[dict[str, Any]]:
+        def _build_group(
+            items: dict[str, list[dict[str, Any]]], key_name: str
+        ) -> list[dict[str, Any]]:
             output = []
             for key, group_rows in sorted(items.items(), key=lambda x: x[0]):
                 calls = len(group_rows)
                 failed = sum(1 for r in group_rows if r.get("status") != "success")
                 tokens = sum(int(r.get("total_tokens") or 0) for r in group_rows)
-                latencies = [int(r["latency_ms"]) for r in group_rows if r.get("latency_ms") is not None]
+                latencies = [
+                    int(r["latency_ms"])
+                    for r in group_rows
+                    if r.get("latency_ms") is not None
+                ]
                 output.append(
                     {
                         key_name: key,
@@ -404,9 +836,144 @@ class PostgresRepository:
             "date_to": str(date_to),
             "total_calls": total_calls,
             "failed_calls": failed_calls,
-            "failure_rate": round((failed_calls / total_calls) if total_calls else 0.0, 4),
+            "failure_rate": round(
+                (failed_calls / total_calls) if total_calls else 0.0, 4
+            ),
             "total_tokens": total_tokens,
             "p95_latency_ms": self._p95(all_latencies),
             "by_model": _build_group(by_model, "model_name"),
             "by_provider": _build_group(by_provider, "provider_name"),
         }
+
+    # ==========================================================================
+    # Health Checks
+    # ==========================================================================
+
+    def insert_health_check(self, data: dict[str, Any]) -> int:
+        """插入健康检查记录"""
+        sql = """
+        INSERT INTO health_checks (check_type, target_id, target_name, status, 
+                                   check_result, latency_ms, error_message)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+        """
+        values = (
+            data["check_type"],
+            data["target_id"],
+            data["target_name"],
+            data["status"],
+            self._to_json_param(self._safe_json_value(data.get("check_result", {}))),
+            data.get("latency_ms"),
+            (data.get("error_message") or "")[:1000] or None,
+        )
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, values)
+                row = cursor.fetchone()
+                return int(row["id"])
+
+    def get_latest_health_check(
+        self, check_type: str, target_id: int
+    ) -> dict[str, Any] | None:
+        """获取最新的健康检查记录"""
+        sql = """
+        SELECT id, check_type, target_id, target_name, status, check_result,
+               latency_ms, error_message, checked_at
+        FROM health_checks
+        WHERE check_type = %s AND target_id = %s
+        ORDER BY checked_at DESC
+        LIMIT 1
+        """
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (check_type, target_id))
+                row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "check_type": row["check_type"],
+            "target_id": row["target_id"],
+            "target_name": row["target_name"],
+            "status": row["status"],
+            "check_result": self._json_load(row.get("check_result")) or {},
+            "latency_ms": row.get("latency_ms"),
+            "error_message": row.get("error_message"),
+            "checked_at": row.get("checked_at"),
+        }
+
+    def list_health_checks(self, filters: dict[str, Any]) -> list[dict[str, Any]]:
+        """列出健康检查记录"""
+        where_clauses = ["1=1"]
+        params: list[Any] = []
+
+        if filters.get("check_type"):
+            where_clauses.append("check_type = %s")
+            params.append(filters["check_type"])
+        if filters.get("target_id"):
+            where_clauses.append("target_id = %s")
+            params.append(filters["target_id"])
+        if filters.get("status"):
+            where_clauses.append("status = %s")
+            params.append(filters["status"])
+
+        limit = int(filters.get("limit", 50))
+        where_sql = " AND ".join(where_clauses)
+
+        sql = f"""
+        SELECT id, check_type, target_id, target_name, status, check_result,
+               latency_ms, error_message, checked_at
+        FROM health_checks
+        WHERE {where_sql}
+        ORDER BY checked_at DESC
+        LIMIT %s
+        """
+
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, tuple(params + [limit]))
+                rows = cursor.fetchall()
+
+        return [
+            {
+                "id": row["id"],
+                "check_type": row["check_type"],
+                "target_id": row["target_id"],
+                "target_name": row["target_name"],
+                "status": row["status"],
+                "check_result": self._json_load(row.get("check_result")) or {},
+                "latency_ms": row.get("latency_ms"),
+                "error_message": row.get("error_message"),
+                "checked_at": row.get("checked_at"),
+            }
+            for row in rows
+        ]
+
+    def get_health_summary(self) -> dict[str, Any]:
+        """获取健康检查汇总统计"""
+        sql = """
+        SELECT 
+            check_type,
+            status,
+            COUNT(*) as count
+        FROM health_checks
+        WHERE checked_at > NOW() - INTERVAL '24 hours'
+        GROUP BY check_type, status
+        """
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql)
+                rows = cursor.fetchall()
+
+        summary: dict[str, Any] = {
+            "providers": {"healthy": 0, "unhealthy": 0, "unknown": 0},
+            "models": {"healthy": 0, "unhealthy": 0, "unknown": 0},
+        }
+        for row in rows:
+            check_type = row["check_type"]
+            status = row["status"]
+            count = int(row["count"])
+            if check_type in summary and status in summary[check_type]:
+                summary[check_type][status] = count
+
+        return summary

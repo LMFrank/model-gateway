@@ -16,14 +16,29 @@ from app.auth import require_admin_auth, require_client_auth
 from app.config import get_settings
 from app.repository import PostgresRepository
 from app.router_engine import RouteNotFoundError, RouterEngine
-from app.schemas import ProviderConfigsUpsertRequest, RouteRulesUpsertRequest
+from app.schemas import (
+    ModelCreate,
+    ModelUpdate,
+    ModelsListResponse,
+    ProviderCreate,
+    ProviderUpdate,
+    ProvidersListResponse,
+    ProviderConfigsUpsertRequest,
+    RouteRulesUpsertRequest,
+    RouteRulesV2ListResponse,
+    RouteRulesV2UpsertRequest,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("model-gateway")
 
 
-def _extract_usage(response_payload: dict[str, Any]) -> tuple[int | None, int | None, int | None]:
-    usage = response_payload.get("usage") if isinstance(response_payload, dict) else None
+def _extract_usage(
+    response_payload: dict[str, Any],
+) -> tuple[int | None, int | None, int | None]:
+    usage = (
+        response_payload.get("usage") if isinstance(response_payload, dict) else None
+    )
     if not isinstance(usage, dict):
         return None, None, None
 
@@ -62,8 +77,10 @@ def create_app() -> FastAPI:
     adapter_registry = {
         "kimi_cli": KimiCliAdapter(settings),
         "codex_cli": KimiCliAdapter(settings),
-        "kimi_api": QwenApiAdapter(settings),
-        "qwen_api": QwenApiAdapter(settings),
+        "openai_api": QwenApiAdapter(settings),
+        "bailian_coding_api": QwenApiAdapter(settings),
+        "bailian_api": QwenApiAdapter(settings),
+        "deepseek_api": QwenApiAdapter(settings),
     }
 
     app.state.settings = settings
@@ -84,7 +101,9 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):
-        request_id = request.headers.get("X-Request-Id") or f"req-{uuid.uuid4().hex[:20]}"
+        request_id = (
+            request.headers.get("X-Request-Id") or f"req-{uuid.uuid4().hex[:20]}"
+        )
         request.state.request_id = request_id
 
         response = await call_next(request)
@@ -107,9 +126,133 @@ def create_app() -> FastAPI:
     async def upsert_routes(body: RouteRulesUpsertRequest) -> dict[str, Any]:
         if not body.rules:
             raise HTTPException(status_code=400, detail="rules cannot be empty")
-        await run_in_threadpool(repository.upsert_route_rules, [item.model_dump() for item in body.rules])
+        await run_in_threadpool(
+            repository.upsert_route_rules, [item.model_dump() for item in body.rules]
+        )
         items = await run_in_threadpool(repository.list_route_rules)
         return {"items": items}
+
+    # ==========================================================================
+    # New Admin APIs (v2 Schema)
+    # ==========================================================================
+
+    # Provider CRUD
+    @app.get("/api/providers", dependencies=[Depends(require_admin_auth)])
+    async def list_providers_v2() -> ProvidersListResponse:
+        items = await run_in_threadpool(repository.list_providers)
+        return ProvidersListResponse(items=items)
+
+    @app.get("/api/providers/{provider_id}", dependencies=[Depends(require_admin_auth)])
+    async def get_provider_v2(provider_id: int) -> dict[str, Any]:
+        item = await run_in_threadpool(repository.get_provider, provider_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="provider not found")
+        return item
+
+    @app.post("/api/providers", dependencies=[Depends(require_admin_auth)])
+    async def create_provider_v2(body: ProviderCreate) -> dict[str, Any]:
+        provider_id = await run_in_threadpool(
+            repository.create_provider, body.model_dump()
+        )
+        item = await run_in_threadpool(repository.get_provider, provider_id)
+        return {"id": provider_id, "item": item}
+
+    @app.put("/api/providers/{provider_id}", dependencies=[Depends(require_admin_auth)])
+    async def update_provider_v2(
+        provider_id: int, body: ProviderUpdate
+    ) -> dict[str, Any]:
+        success = await run_in_threadpool(
+            repository.update_provider, provider_id, body.model_dump(exclude_unset=True)
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="provider not found")
+        item = await run_in_threadpool(repository.get_provider, provider_id)
+        return {"item": item}
+
+    @app.delete(
+        "/api/providers/{provider_id}", dependencies=[Depends(require_admin_auth)]
+    )
+    async def delete_provider_v2(provider_id: int) -> dict[str, str]:
+        success = await run_in_threadpool(repository.delete_provider, provider_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="provider not found")
+        return {"message": "provider deleted"}
+
+    # Model CRUD
+    @app.get("/api/models", dependencies=[Depends(require_admin_auth)])
+    async def list_models_v2(
+        provider_id: int | None = Query(default=None),
+    ) -> ModelsListResponse:
+        items = await run_in_threadpool(repository.list_models, provider_id)
+        return ModelsListResponse(items=items)
+
+    @app.get("/api/models/{model_id}", dependencies=[Depends(require_admin_auth)])
+    async def get_model_v2(model_id: int) -> dict[str, Any]:
+        item = await run_in_threadpool(repository.get_model, model_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="model not found")
+        return item
+
+    @app.post("/api/models", dependencies=[Depends(require_admin_auth)])
+    async def create_model_v2(body: ModelCreate) -> dict[str, Any]:
+        # Validate provider exists
+        provider = await run_in_threadpool(repository.get_provider, body.provider_id)
+        if not provider:
+            raise HTTPException(status_code=400, detail="provider not found")
+
+        model_id = await run_in_threadpool(repository.create_model, body.model_dump())
+        item = await run_in_threadpool(repository.get_model, model_id)
+        return {"id": model_id, "item": item}
+
+    @app.put("/api/models/{model_id}", dependencies=[Depends(require_admin_auth)])
+    async def update_model_v2(model_id: int, body: ModelUpdate) -> dict[str, Any]:
+        # Validate provider if provided
+        if body.provider_id:
+            provider = await run_in_threadpool(
+                repository.get_provider, body.provider_id
+            )
+            if not provider:
+                raise HTTPException(status_code=400, detail="provider not found")
+
+        success = await run_in_threadpool(
+            repository.update_model, model_id, body.model_dump(exclude_unset=True)
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="model not found")
+        item = await run_in_threadpool(repository.get_model, model_id)
+        return {"item": item}
+
+    @app.delete("/api/models/{model_id}", dependencies=[Depends(require_admin_auth)])
+    async def delete_model_v2(model_id: int) -> dict[str, str]:
+        success = await run_in_threadpool(repository.delete_model, model_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="model not found")
+        return {"message": "model deleted"}
+
+    # Route Rules v2
+    @app.get("/api/routes", dependencies=[Depends(require_admin_auth)])
+    async def list_routes_v2() -> RouteRulesV2ListResponse:
+        items = await run_in_threadpool(repository.list_route_rules_v2)
+        return RouteRulesV2ListResponse(items=items)
+
+    @app.post("/api/routes", dependencies=[Depends(require_admin_auth)])
+    async def upsert_routes_v2(
+        body: RouteRulesV2UpsertRequest,
+    ) -> RouteRulesV2ListResponse:
+        if not body.rules:
+            raise HTTPException(status_code=400, detail="rules cannot be empty")
+        await run_in_threadpool(
+            repository.upsert_route_rules_v2, [item.model_dump() for item in body.rules]
+        )
+        items = await run_in_threadpool(repository.list_route_rules_v2)
+        return RouteRulesV2ListResponse(items=items)
+
+    @app.delete("/api/routes/{model_key}", dependencies=[Depends(require_admin_auth)])
+    async def delete_route_v2(model_key: str) -> dict[str, str]:
+        success = await run_in_threadpool(repository.delete_route_rule_v2, model_key)
+        if not success:
+            raise HTTPException(status_code=404, detail="route not found")
+        return {"message": "route deleted"}
 
     @app.get("/admin/providers", dependencies=[Depends(require_admin_auth)])
     async def list_providers() -> dict[str, Any]:
@@ -120,7 +263,10 @@ def create_app() -> FastAPI:
     async def upsert_providers(body: ProviderConfigsUpsertRequest) -> dict[str, Any]:
         if not body.providers:
             raise HTTPException(status_code=400, detail="providers cannot be empty")
-        await run_in_threadpool(repository.upsert_provider_configs, [item.model_dump() for item in body.providers])
+        await run_in_threadpool(
+            repository.upsert_provider_configs,
+            [item.model_dump() for item in body.providers],
+        )
         items = await run_in_threadpool(repository.list_provider_configs)
         return {"items": items}
 
@@ -153,6 +299,202 @@ def create_app() -> FastAPI:
     ) -> dict[str, Any]:
         return await run_in_threadpool(repository.get_usage_summary, date_from, date_to)
 
+    @app.get("/api/health/checks", dependencies=[Depends(require_admin_auth)])
+    async def list_health_checks(
+        check_type: str | None = Query(None, description="provider or model"),
+        target_id: int | None = Query(None),
+        status: str | None = Query(None),
+        limit: int = Query(50, ge=1, le=200),
+    ) -> dict[str, Any]:
+        items = await run_in_threadpool(
+            repository.list_health_checks,
+            {
+                "check_type": check_type,
+                "target_id": target_id,
+                "status": status,
+                "limit": limit,
+            },
+        )
+        return {"items": items}
+
+    @app.get("/api/health/summary", dependencies=[Depends(require_admin_auth)])
+    async def health_summary() -> dict[str, Any]:
+        return await run_in_threadpool(repository.get_health_summary)
+
+    @app.post(
+        "/api/health/check/provider/{provider_id}",
+        dependencies=[Depends(require_admin_auth)],
+    )
+    async def check_provider_health(provider_id: int) -> dict[str, Any]:
+        provider = await run_in_threadpool(repository.get_provider, provider_id)
+        if not provider:
+            raise HTTPException(status_code=404, detail="provider not found")
+
+        import asyncio
+
+        started_at = time.perf_counter()
+        status = "unknown"
+        check_result: dict[str, Any] = {}
+        error_message = None
+
+        if provider["provider_type"] == "api":
+            base_url = provider.get("base_url")
+            if base_url:
+                try:
+                    async with asyncio.timeout(10):
+                        resp = await httpx_async_client().get(
+                            f"{base_url.rstrip('/')}/models", timeout=10.0
+                        )
+                        if resp.status_code == 200:
+                            status = "healthy"
+                            check_result["endpoint_reachable"] = True
+                            check_result["http_status"] = resp.status_code
+                        else:
+                            status = "unhealthy"
+                            check_result["endpoint_reachable"] = False
+                            check_result["http_status"] = resp.status_code
+                            error_message = f"HTTP {resp.status_code}"
+                except asyncio.TimeoutError:
+                    status = "unhealthy"
+                    check_result["endpoint_reachable"] = False
+                    error_message = "timeout after 10s"
+                except Exception as e:
+                    status = "unhealthy"
+                    check_result["endpoint_reachable"] = False
+                    error_message = str(e)[:200]
+            else:
+                status = "unknown"
+                error_message = "no base_url configured"
+        else:
+            status = "unknown"
+            error_message = "CLI provider health check not supported"
+
+        latency_ms = int((time.perf_counter() - started_at) * 1000)
+
+        log_id = await run_in_threadpool(
+            repository.insert_health_check,
+            {
+                "check_type": "provider",
+                "target_id": provider_id,
+                "target_name": provider["name"],
+                "status": status,
+                "check_result": check_result,
+                "latency_ms": latency_ms,
+                "error_message": error_message,
+            },
+        )
+
+        return {
+            "id": log_id,
+            "provider_id": provider_id,
+            "provider_name": provider["name"],
+            "status": status,
+            "latency_ms": latency_ms,
+            "check_result": check_result,
+            "error_message": error_message,
+            "checked_at": time.time(),
+        }
+
+    @app.post(
+        "/api/health/check/model/{model_id}", dependencies=[Depends(require_admin_auth)]
+    )
+    async def check_model_health(model_id: int) -> dict[str, Any]:
+        model = await run_in_threadpool(repository.get_model, model_id)
+        if not model:
+            raise HTTPException(status_code=404, detail="model not found")
+
+        provider = model.get("provider")
+        if not provider:
+            raise HTTPException(status_code=400, detail="model has no provider")
+
+        import asyncio
+
+        started_at = time.perf_counter()
+        status = "unknown"
+        check_result: dict[str, Any] = {}
+        error_message = None
+
+        test_payload = {
+            "model": model["upstream_model"],
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 5,
+        }
+
+        provider_config = await run_in_threadpool(
+            repository.get_provider, provider["id"]
+        )
+        if not provider_config:
+            raise HTTPException(status_code=400, detail="provider config not found")
+
+        adapter = adapter_registry.get(provider["name"])
+        if adapter:
+            try:
+                async with asyncio.timeout(30):
+                    resp = await adapter.chat(
+                        test_payload,
+                        {
+                            "base_url": provider_config.get("base_url"),
+                            "api_key": provider_config.get("api_key"),
+                            "config": provider_config.get("config", {}),
+                        },
+                    )
+                    status = "healthy"
+                    check_result["request_successful"] = True
+                    check_result["response_type"] = "chat"
+            except asyncio.TimeoutError:
+                status = "unhealthy"
+                check_result["request_successful"] = False
+                error_message = "timeout after 30s"
+            except AdapterError as e:
+                status = "unhealthy"
+                check_result["request_successful"] = False
+                error_message = str(e)[:200]
+            except Exception as e:
+                status = "unhealthy"
+                check_result["request_successful"] = False
+                error_message = str(e)[:200]
+        else:
+            status = "unknown"
+            error_message = f"no adapter for provider {provider['name']}"
+
+        latency_ms = int((time.perf_counter() - started_at) * 1000)
+
+        log_id = await run_in_threadpool(
+            repository.insert_health_check,
+            {
+                "check_type": "model",
+                "target_id": model_id,
+                "target_name": model["model_key"],
+                "status": status,
+                "check_result": check_result,
+                "latency_ms": latency_ms,
+                "error_message": error_message,
+            },
+        )
+
+        await run_in_threadpool(
+            repository.update_model,
+            model_id,
+            {"health_status": status},
+        )
+
+        return {
+            "id": log_id,
+            "model_id": model_id,
+            "model_key": model["model_key"],
+            "provider_name": provider["name"],
+            "status": status,
+            "latency_ms": latency_ms,
+            "check_result": check_result,
+            "error_message": error_message,
+            "checked_at": time.time(),
+        }
+
+    def httpx_async_client():
+        import httpx
+
+        return httpx.AsyncClient()
+
     @app.post("/v1/chat/completions", dependencies=[Depends(require_client_auth)])
     async def chat_completions(request: Request):
         try:
@@ -168,18 +510,30 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail="model is required")
 
         is_stream = bool(payload.get("stream", False))
-        request_id = str(getattr(request.state, "request_id", f"req-{uuid.uuid4().hex[:20]}"))
+        request_id = str(
+            getattr(request.state, "request_id", f"req-{uuid.uuid4().hex[:20]}")
+        )
         task_id, stock_code = _extract_task_fields(payload)
 
         started_at = time.perf_counter()
         attempted_chain: list[str] = []
         errors: list[str] = []
 
+        # Get model info to retrieve upstream_model
+        model_info = await run_in_threadpool(repository.get_model_by_key, model_name)
+        upstream_model = model_info.get("upstream_model") if model_info else None
+
+        # Replace model in payload with upstream_model if available
+        if upstream_model:
+            payload = {**payload, "model": upstream_model}
+
         try:
             route_rule = await run_in_threadpool(repository.get_route_rule, model_name)
         except Exception as exc:  # noqa: BLE001
             logger.exception("route_rule_fetch_failed model=%s", model_name)
-            raise HTTPException(status_code=503, detail=f"route repository unavailable: {exc}") from exc
+            raise HTTPException(
+                status_code=503, detail=f"route repository unavailable: {exc}"
+            ) from exc
 
         try:
             decision = router_engine.decide(model_name, route_rule)
@@ -218,9 +572,13 @@ def create_app() -> FastAPI:
                 continue
 
             try:
-                provider_row = await run_in_threadpool(repository.get_provider_config, provider_name)
+                provider_row = await run_in_threadpool(
+                    repository.get_provider_config, provider_name
+                )
             except Exception as exc:  # noqa: BLE001
-                logger.exception("provider_config_fetch_failed provider=%s", provider_name)
+                logger.exception(
+                    "provider_config_fetch_failed provider=%s", provider_name
+                )
                 errors.append(f"{provider_name}: provider config unavailable ({exc})")
                 continue
             if not provider_row or not provider_row.get("is_enabled", True):
@@ -231,7 +589,9 @@ def create_app() -> FastAPI:
 
             try:
                 if is_stream:
-                    stream_handle = await adapter.prepare_stream(payload, provider_config)
+                    stream_handle = await adapter.prepare_stream(
+                        payload, provider_config
+                    )
 
                     async def stream_wrapper(
                         selected_provider: str = provider_name,
@@ -242,7 +602,9 @@ def create_app() -> FastAPI:
                                 yield chunk
                         except Exception as exc:  # noqa: BLE001
                             stream_error = str(exc)
-                            logger.exception("stream provider failed: %s", selected_provider)
+                            logger.exception(
+                                "stream provider failed: %s", selected_provider
+                            )
                             raise
                         finally:
                             await stream_handle.close()
@@ -270,10 +632,14 @@ def create_app() -> FastAPI:
                                 }
                             )
 
-                    return StreamingResponse(stream_wrapper(), media_type="text/event-stream")
+                    return StreamingResponse(
+                        stream_wrapper(), media_type="text/event-stream"
+                    )
 
                 response_payload = await adapter.chat(payload, provider_config)
-                prompt_tokens, completion_tokens, total_tokens = _extract_usage(response_payload)
+                prompt_tokens, completion_tokens, total_tokens = _extract_usage(
+                    response_payload
+                )
                 latency_ms = int((time.perf_counter() - started_at) * 1000)
 
                 await safe_insert_call_log(
