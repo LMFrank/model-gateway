@@ -317,3 +317,81 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Files: docs/integration.md, README.md, changes.log
 - Verify: 文档更新完成
 - Next: None
+
+## [2026-03-31 23:29 +0800] [Codex] [TASK-20260331-POST405-model-test-proxy] [START]
+- Intent: 修复前端“模型测试”点击后返回 405 的问题，并完成生产前端验证
+- Scope: 仅修复前端代理层对 `/v1` 路径的转发缺失，必要时同步本地开发代理；不改后端业务路由逻辑
+- Files: frontend/nginx.conf, frontend/vite.config.ts, changes.log
+- Verify: 待执行：前端构建 + 代理请求验证 + 接口连通性检查
+- Next: 为 nginx 与 Vite 增加 `/v1` 代理并重测“模型测试”链路
+
+## [2026-03-31 23:37 +08:00] [Codex] [TASK-20260331-POST405-model-test-proxy] [DONE]
+- Intent: 修复前端“模型测试”点击后返回 405 的问题，并完成生产前端验证
+- Scope: 为前端生产 nginx 与本地 Vite 增加 /v1 代理；不改后端业务路由
+- Files: frontend/nginx.conf, frontend/vite.config.ts, changes.log
+- Verify: cd frontend && npm run build 成功；DOCKER_BUILDKIT=0 docker compose up -d --build frontend 成功并重建 model-gateway-ui；POST http://localhost:3001/v1/chat/completions（缺少 model）返回 400（已非 405）；通过前端代理抽检 qwen3-max/deepseek-chat 返回 200
+- Next: None
+
+
+## [2026-03-31 23:45 +08:00] [Codex] [TASK-20260331-health-status-refresh] [START]
+- Intent: 修复模型“测试”后健康状态不更新的问题
+- Scope: 调整前端测试逻辑为调用会更新健康状态的接口；清理 changes.log 中上一轮误写入的污染段；不改后端路由语义
+- Files: frontend/src/views/Models.vue, changes.log
+- Verify: 待执行：前端构建 + 接口调用验证 + 健康状态刷新确认
+- Next: 修改模型测试按钮逻辑并验证状态变化
+
+## [2026-03-31 23:49 +08:00] [Codex] [TASK-20260331-health-status-refresh] [DONE]
+- Intent: 修复模型“测试”后健康状态不更新的问题
+- Scope: 前端模型页测试按钮改为调用 /api/health/check/model/{id}；清理上一轮误写入的 changes.log 污染段；不改后端路由语义
+- Files: frontend/src/views/Models.vue, changes.log
+- Verify: cd frontend && npm run build 成功；DOCKER_BUILDKIT=0 docker compose up -d --build frontend 成功；生产 bundle 校验显示 Models.handleTest 调用 `sr.healthCheck`；POST /api/health/check/model/5 返回 200 且 status=healthy，随后 GET /api/models 中 id=5 的 health_status=healthy、last_health_check 已更新
+- Next: None
+
+## [2026-04-01 00:03 +08:00] [Codex] [TASK-20260401-cli-provider-probe] [START]
+- Intent: 为 CLI Provider 增加可执行的健康探针能力（替代当前 unknown）
+- Scope: 仅改后端 provider 健康检查逻辑，复用 adapter.chat 做最小探针；不改前端页面结构
+- Files: app/main.py, changes.log
+- Verify: 待执行：构建/运行检查 + 调用 /api/health/check/provider/{cli_id} 观察返回与日志
+- Next: 在 check_provider_health 中实现 CLI 分支探测并验证
+
+## [2026-04-01 00:09 +08:00] [Codex] [TASK-20260401-cli-provider-probe] [DONE]
+- Intent: 为 CLI Provider 增加可执行的健康探针能力（替代当前 unknown）
+- Scope: 实现 CLI provider 健康探针：选择绑定的启用模型并调用 adapter.chat 最小请求；限制探针超时；不改前端页面结构
+- Files: app/main.py, changes.log
+- Verify: docker restart model-gateway 成功；POST /api/health/check/provider/5(codex_cli) 返回 unhealthy 且 check_result.timeout_sec=30、probe_model=codex-for-coding；POST /api/health/check/provider/1(kimi_cli) 返回 healthy 且 check_result.timeout_sec=30、probe_model=kimi-for-coding
+- Next: None
+
+## [2026-04-01 00:14 +08:00] [Codex] [TASK-20260401-release-v0.1.1] [START]
+- Intent: 发布 v0.1.1，纳入近期修复并同步文档/标签
+- Scope: 更新 README 版本信息与版本历史，补齐 GATEWAY_UI_PORT 示例配置，执行发布提交与 tag；不改业务逻辑
+- Files: README.md, .env.example, changes.log
+- Verify: 待执行：README/compose 一致性检查、基础验证命令、git tag 校验
+- Next: 修改版本文档并执行 release 提交流程
+
+## [2026-04-01 00:30 +08:00] [Codex] [TASK-20260401-release-v0.1.1] [HANDOFF]
+- Intent: 发布 v0.1.1，纳入近期修复并同步文档/标签
+- Scope: README/.env.example 已更新到发版草稿，但发版前发现线上模型配置缺陷需先修复
+- Files: README.md, .env.example, changes.log
+- Verify: 已完成版本文档更新与一致性检查；发现 `minimax-m2.5` 上游模型名错误导致测试失败
+- Next: 先修复 minimax 上游模型名（运行时 + 迁移脚本）并验证，再继续 release 提交与打 tag
+
+## [2026-04-01 00:30 +08:00] [Codex] [TASK-20260401-fix-minimax-upstream-model] [START]
+- Intent: 修复 MiniMax 模型测试失败（invalid_parameter_error）
+- Scope: 修正模型 upstream_model 为 `MiniMax-M2.5`（运行时数据 + 新迁移脚本）；不改路由逻辑
+- Files: sql/migrations/v0.1.1_fix_minimax_upstream_model.sql, changes.log
+- Verify: 待执行：调用模型健康检查确认从 unsupported 转为可用响应
+- Next: 应用数据修复并补充迁移脚本
+
+## [2026-04-01 00:33 +08:00] [Codex] [TASK-20260401-fix-minimax-upstream-model] [DONE]
+- Intent: 修复 MiniMax 模型测试失败（invalid_parameter_error）
+- Scope: 将 minimax 上游模型名修正为 `MiniMax-M2.5`；新增幂等迁移脚本；不改路由逻辑
+- Files: sql/migrations/v0.1.1_fix_minimax_upstream_model.sql, changes.log
+- Verify: PUT /api/models/10 `upstream_model=MiniMax-M2.5` 成功；POST /api/health/check/model/10 返回 healthy；POST /v1/chat/completions(model=minimax-m2.5) 返回 200 且响应 model=MiniMax-M2.5
+- Next: 恢复 release 流程并完成提交/打 tag
+
+## [2026-04-01 00:38 +08:00] [Codex] [TASK-20260401-release-v0.1.1] [DONE]
+- Intent: 发布 v0.1.1，纳入近期修复并同步文档/标签
+- Scope: 更新 README 版本与版本历史，补齐 GATEWAY_UI_PORT 文档/示例，合入近期修复（代理、模型测试、CLI 探针、MiniMax 模型名修复）
+- Files: README.md, .env.example, app/main.py, frontend/nginx.conf, frontend/vite.config.ts, frontend/src/views/Models.vue, sql/migrations/v0.1.1_fix_minimax_upstream_model.sql, changes.log
+- Verify: `python -m compileall app` 成功；`cd frontend && npm run build` 成功；`POST /api/health/check/model/10`=healthy；`POST /v1/chat/completions(model=minimax-m2.5)` 返回 200
+- Next: None
