@@ -366,8 +366,65 @@ def create_app() -> FastAPI:
                 status = "unknown"
                 error_message = "no base_url configured"
         else:
-            status = "unknown"
-            error_message = "CLI provider health check not supported"
+            adapter = adapter_registry.get(provider["name"])
+            if not adapter:
+                status = "unknown"
+                error_message = f"no adapter for provider {provider['name']}"
+            else:
+                provider_models = await run_in_threadpool(
+                    repository.list_models, provider["id"]
+                )
+                active_models = [
+                    item for item in provider_models if bool(item.get("is_active"))
+                ]
+                probe_model = active_models[0] if active_models else None
+                if not probe_model:
+                    status = "unknown"
+                    error_message = "no active model bound to provider"
+                else:
+                    runtime_config = provider.get("config", {}) or {}
+                    if not isinstance(runtime_config, dict):
+                        runtime_config = {}
+                    raw_timeout = runtime_config.get("timeout_sec", 20)
+                    try:
+                        probe_timeout_sec = int(raw_timeout)
+                    except (TypeError, ValueError):
+                        probe_timeout_sec = 20
+                    probe_timeout_sec = max(5, min(probe_timeout_sec, 30))
+                    runtime_config = {
+                        **runtime_config,
+                        "base_url": provider.get("base_url"),
+                        "api_key": provider.get("api_key"),
+                        "timeout_sec": probe_timeout_sec,
+                    }
+                    probe_payload = {
+                        "model": probe_model.get("upstream_model")
+                        or probe_model["model_key"],
+                        "messages": [{"role": "user", "content": "ping"}],
+                        "max_tokens": 1,
+                    }
+                    check_result["probe_model"] = probe_model["model_key"]
+                    check_result["probe_upstream_model"] = probe_payload["model"]
+                    check_result["timeout_sec"] = probe_timeout_sec
+
+                    try:
+                        async with asyncio.timeout(probe_timeout_sec):
+                            await adapter.chat(probe_payload, runtime_config)
+                        status = "healthy"
+                        check_result["request_successful"] = True
+                        check_result["response_type"] = "chat"
+                    except asyncio.TimeoutError:
+                        status = "unhealthy"
+                        check_result["request_successful"] = False
+                        error_message = f"timeout after {probe_timeout_sec}s"
+                    except AdapterError as e:
+                        status = "unhealthy"
+                        check_result["request_successful"] = False
+                        error_message = str(e)[:200]
+                    except Exception as e:
+                        status = "unhealthy"
+                        check_result["request_successful"] = False
+                        error_message = str(e)[:200]
 
         latency_ms = int((time.perf_counter() - started_at) * 1000)
 

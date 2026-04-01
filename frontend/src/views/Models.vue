@@ -230,9 +230,14 @@ const handleDelete = async (row: Model) => {
 const handleTest = async (row: Model & { _testing?: boolean }) => {
   row._testing = true
   try {
-    const result = await modelsApi.test(row.model_key)
-    const content = result.choices?.[0]?.message?.content || '无响应内容'
-    ElMessage.success(`测试成功: ${content.slice(0, 50)}${content.length > 50 ? '...' : ''}`)
+    const result = await modelsApi.healthCheck(row.id)
+    if (result.status === 'healthy') {
+      ElMessage.success(`测试成功：${row.display_name} 状态已更新为健康`)
+    } else if (result.status === 'unhealthy') {
+      ElMessage.error(`测试失败：${result.error_message || '请求异常'}`)
+    } else {
+      ElMessage.warning(`测试完成：当前状态为 ${getHealthLabel(result.status)}`)
+    }
     await fetchData()
   } catch (error: any) {
     const detail = error.response?.data?.detail || error.message

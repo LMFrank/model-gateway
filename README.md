@@ -1,10 +1,12 @@
-# Model Gateway
+# Model Gateway v0.1.1
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green.svg)](https://fastapi.tiangolo.com/)
 
 **OpenAI 兼容的 LLM 网关，统一管理多个 Provider，将 CLI 工具封装为 API。**
+
+**当前版本**: `v0.1.1`（2026-04-01）
 
 > ⚠️ **声明**: 本项目仅供个人学习研究使用。使用时请遵守各模型官方的服务条款和使用规则。
 
@@ -174,6 +176,7 @@ OPENAI_API_KEY=your-gateway-token
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `GATEWAY_PORT` | 网关端口 | 8080 |
+| `GATEWAY_UI_PORT` | 管理界面端口 | 3001 |
 | `GATEWAY_CLIENT_TOKEN` | 客户端 Token | - |
 | `GATEWAY_ADMIN_TOKEN` | 管理端 Token | - |
 | `PG_HOST` | PostgreSQL 主机 | localhost |
@@ -238,8 +241,8 @@ models = [m["model_key"] for m in response.json()["items"]]
 | `GET/POST /api/routes` | 路由规则管理 |
 | `POST /api/health/check/provider/{id}` | Provider 健康检查 |
 | `POST /api/health/check/model/{id}` | Model 测试调用 |
-| `GET /api/calls` | 调用记录 |
-| `GET /api/usage/summary` | 使用统计 |
+| `GET /admin/calls` | 调用记录 |
+| `GET /admin/usage/summary` | 使用统计 |
 
 ## 本地开发
 
@@ -306,6 +309,7 @@ API Key 存储在数据库，建议：
 
 ## 版本历史
 
+- `v0.1.1` (2026-04-01): 修复模型测试与健康状态刷新；新增 CLI Provider 健康探针；修正 MiniMax 上游模型名；补齐 `/v1` 前端代理
 - `v0.1.0` (2026-03-31): Vue 3 管理界面、健康检查、扩展 providers/models
 - `v0.0.5` (2026-03-28): 统一 codex_cli + sub2api 方案
 - `v0.0.4` (2026-03-28): 新增 codex_cli provider
