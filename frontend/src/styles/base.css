@@ -1,0 +1,101 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  --el-color-primary: var(--mg-color-accent-primary);
+  --el-color-success: var(--mg-color-success);
+  --el-color-warning: var(--mg-color-warning);
+  --el-color-danger: var(--mg-color-danger);
+  --el-color-info: var(--mg-color-info);
+  --el-bg-color: var(--mg-color-bg-panel);
+  --el-bg-color-page: var(--mg-color-bg-canvas);
+  --el-text-color-primary: var(--mg-color-text-primary);
+  --el-text-color-regular: var(--mg-color-text-secondary);
+  --el-border-color: var(--mg-color-border-soft);
+  --el-border-color-light: var(--mg-color-border-muted);
+  --el-border-radius-base: var(--mg-radius-md);
+  --el-border-radius-round: var(--mg-radius-pill);
+  --el-box-shadow-light: var(--mg-shadow-soft);
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--mg-color-text-primary);
+  background: var(--mg-color-bg-canvas);
+  font-family: var(--mg-font-family-body);
+  line-height: var(--mg-line-height-body);
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.el-card {
+  border-radius: var(--mg-radius-lg);
+  border-color: var(--mg-color-border-soft);
+  box-shadow: var(--mg-shadow-card);
+}
+
+.mg-page {
+  padding: var(--mg-layout-page-padding);
+  display: flex;
+  flex-direction: column;
+  gap: var(--mg-layout-page-gap);
+}
+
+.mg-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mg-space-3);
+}
+
+.mg-page-title {
+  margin: 0;
+  color: var(--mg-color-text-primary);
+  font-family: var(--mg-font-family-display);
+  font-size: var(--mg-font-size-xl);
+  line-height: var(--mg-line-height-tight);
+}
+
+.mg-table-card {
+  overflow: hidden;
+}
+
+.mg-stat-item {
+  text-align: center;
+}
+
+.mg-stat-value {
+  color: var(--mg-color-accent-primary);
+  font-weight: 700;
+}
+
+.mg-stat-label {
+  margin-top: var(--mg-space-2);
+  color: var(--mg-color-text-secondary);
+  font-size: var(--mg-font-size-sm);
+}
+
+@media (max-width: 960px) {
+  .mg-page {
+    padding: var(--mg-layout-page-padding-compact);
+  }
+
+  .mg-page-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+}

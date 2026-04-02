@@ -1,136 +1,111 @@
 <template>
-  <div class="dashboard-page">
-    <h1>Model Gateway 概览</h1>
-    
-    <el-row :gutter="20" class="stats-row">
-      <el-col :span="6">
+  <section class="dashboard-page mg-page">
+    <h1 class="mg-page-title">Model Gateway 概览</h1>
+
+    <el-row :gutter="uiLayoutTokens.gridGutter" class="stats-row">
+      <el-col :xs="12" :md="6">
         <el-card>
-          <div class="stat-item">
-            <div class="stat-value">{{ stats.providers }}</div>
-            <div class="stat-label">Providers</div>
+          <div class="mg-stat-item">
+            <div class="stat-value mg-stat-value">{{ stats.providers }}</div>
+            <div class="mg-stat-label">Providers</div>
           </div>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="12" :md="6">
         <el-card>
-          <div class="stat-item">
-            <div class="stat-value">{{ stats.models }}</div>
-            <div class="stat-label">模型</div>
+          <div class="mg-stat-item">
+            <div class="stat-value mg-stat-value">{{ stats.models }}</div>
+            <div class="mg-stat-label">模型</div>
           </div>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="12" :md="6">
         <el-card>
-          <div class="stat-item">
-            <div class="stat-value">{{ stats.routes }}</div>
-            <div class="stat-label">路由规则</div>
+          <div class="mg-stat-item">
+            <div class="stat-value mg-stat-value">{{ stats.routes }}</div>
+            <div class="mg-stat-label">路由规则</div>
           </div>
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :xs="12" :md="6">
         <el-card>
-          <div class="stat-item">
-            <div class="stat-value">{{ stats.healthyModels }}</div>
-            <div class="stat-label">健康模型</div>
+          <div class="mg-stat-item">
+            <div class="stat-value mg-stat-value">{{ stats.healthyModels }}</div>
+            <div class="mg-stat-label">健康模型</div>
           </div>
         </el-card>
       </el-col>
     </el-row>
 
-    <el-card class="recent-card">
-      <template #header>
-        <span>快速导航</span>
-      </template>
-      <el-row :gutter="20">
-        <el-col :span="6">
-          <el-button type="primary" @click="$router.push('/providers')" style="width: 100%">
-            Provider 管理
-          </el-button>
+    <el-card class="quick-card">
+      <template #header>快速导航</template>
+      <el-row :gutter="uiLayoutTokens.gridGutter">
+        <el-col :xs="12" :md="6">
+          <el-button class="full-width" type="primary" @click="go('/providers')">Provider 管理</el-button>
         </el-col>
-        <el-col :span="6">
-          <el-button type="success" @click="$router.push('/models')" style="width: 100%">
-            模型管理
-          </el-button>
+        <el-col :xs="12" :md="6">
+          <el-button class="full-width" type="success" @click="go('/models')">模型管理</el-button>
         </el-col>
-        <el-col :span="6">
-          <el-button type="warning" @click="$router.push('/routes')" style="width: 100%">
-            路由规则
-          </el-button>
+        <el-col :xs="12" :md="6">
+          <el-button class="full-width" type="warning" @click="go('/routes')">路由规则</el-button>
         </el-col>
-        <el-col :span="6">
-          <el-button type="info" @click="$router.push('/usage')" style="width: 100%">
-            使用量统计
-          </el-button>
+        <el-col :xs="12" :md="6">
+          <el-button class="full-width" type="info" @click="go('/usage')">使用量统计</el-button>
         </el-col>
       </el-row>
     </el-card>
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { providersApi } from '@/api/providers'
-import { modelsApi } from '@/api/models'
-import { routesApi } from '@/api/routes'
+import { computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { useModelsStore } from '@/stores/models'
+import { useProvidersStore } from '@/stores/providers'
+import { useRoutesStore } from '@/stores/routes'
+import { extractErrorMessage } from '@/stores/helpers'
+import { uiLayoutTokens } from '@/ui/designTokens'
 
-const stats = ref({
-  providers: 0,
-  models: 0,
-  routes: 0,
-  healthyModels: 0,
-})
+const router = useRouter()
+const providersStore = useProvidersStore()
+const modelsStore = useModelsStore()
+const routesStore = useRoutesStore()
 
-const fetchStats = async () => {
-  try {
-    const [providers, models, routes] = await Promise.all([
-      providersApi.list(),
-      modelsApi.list(),
-      routesApi.list(),
-    ])
-    stats.value = {
-      providers: providers.length,
-      models: models.length,
-      routes: routes.length,
-      healthyModels: models.filter(m => m.health_status === 'healthy').length,
-    }
-  } catch (error) {
-    console.error('Failed to fetch stats:', error)
-  }
+const stats = computed(() => ({
+  providers: providersStore.items.length,
+  models: modelsStore.items.length,
+  routes: routesStore.items.length,
+  healthyModels: modelsStore.items.filter((item) => item.health_status === 'healthy').length,
+}))
+
+const go = (path: string) => {
+  void router.push(path)
 }
 
-onMounted(fetchStats)
+onMounted(async () => {
+  try {
+    await Promise.all([providersStore.fetchAll(), modelsStore.fetchAll(), routesStore.fetchAll()])
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error, '获取概览数据失败'))
+  }
+})
 </script>
 
 <style scoped>
-.dashboard-page {
-  padding: 20px;
-}
-
-.dashboard-page h1 {
-  margin-bottom: 20px;
-}
-
 .stats-row {
-  margin-bottom: 20px;
-}
-
-.stat-item {
-  text-align: center;
+  margin-bottom: 0;
 }
 
 .stat-value {
-  font-size: 36px;
-  font-weight: bold;
-  color: #409EFF;
+  font-size: var(--mg-font-size-stat-lg);
 }
 
-.stat-label {
-  font-size: 14px;
-  color: #909399;
-  margin-top: 8px;
+.quick-card {
+  margin-top: 0;
 }
 
-.recent-card {
-  margin-top: 20px;
+.full-width {
+  width: 100%;
 }
 </style>

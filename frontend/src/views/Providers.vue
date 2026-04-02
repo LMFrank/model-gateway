@@ -1,54 +1,74 @@
 <template>
-  <div class="providers-page">
-    <div class="page-header">
-      <h1>Provider 管理</h1>
-      <el-button type="primary" @click="showCreateDialog">
-        <el-icon><Plus /></el-icon>新增 Provider
+  <section class="providers-page mg-page">
+    <div class="page-header mg-page-header">
+      <h1 class="mg-page-title">Provider 管理</h1>
+      <el-button type="primary" @click="openCreateDialog">
+        <el-icon><Plus /></el-icon>
+        新增 Provider
       </el-button>
     </div>
 
-    <el-table :data="providers" v-loading="loading" style="width: 100%">
-      <el-table-column prop="name" label="名称" width="150" />
-      <el-table-column prop="display_name" label="显示名称" width="180" />
-      <el-table-column prop="provider_type" label="类型" width="100">
-        <template #default="{ row }">
-          <el-tag :type="row.provider_type === 'cli' ? 'success' : 'primary'">
-            {{ row.provider_type === 'cli' ? 'CLI' : 'API' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="base_url" label="Base URL" show-overflow-tooltip />
-      <el-table-column prop="is_enabled" label="状态" width="100">
-        <template #default="{ row }">
-          <el-switch
-            v-model="row.is_enabled"
-            @change="handleStatusChange(row)"
-          />
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="250" fixed="right">
-        <template #default="{ row }">
-          <el-button type="success" size="small" @click="handleHealthCheck(row)" :loading="row._checking">
-            健康检查
-          </el-button>
-          <el-button type="primary" size="small" @click="showEditDialog(row)">
-            编辑
-          </el-button>
-          <el-button type="danger" size="small" @click="handleDelete(row)">
-            删除
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <el-card class="table-card mg-table-card">
+      <el-table :data="providersStore.items" v-loading="providersStore.loading" row-key="id">
+        <el-table-column prop="name" label="名称" :min-width="uiTableTokens.providers.nameMinWidth" />
+        <el-table-column
+          prop="display_name"
+          label="显示名称"
+          :min-width="uiTableTokens.providers.displayNameMinWidth"
+        />
+        <el-table-column prop="provider_type" label="类型" :width="uiTableTokens.providers.typeWidth">
+          <template #default="{ row }">
+            <el-tag :type="row.provider_type === 'cli' ? 'success' : 'primary'" effect="light">
+              {{ row.provider_type === 'cli' ? 'CLI' : 'API' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="base_url"
+          label="Base URL"
+          :min-width="uiTableTokens.providers.baseUrlMinWidth"
+          show-overflow-tooltip
+        />
+        <el-table-column label="状态" :width="uiTableTokens.providers.statusWidth">
+          <template #default="{ row }">
+            <el-switch
+              :model-value="row.is_enabled"
+              :loading="providersStore.submitting"
+              @change="onStatusChange(row, $event)"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" fixed="right" :width="uiTableTokens.providers.actionsWidth">
+          <template #default="{ row }">
+            <div class="action-group">
+              <el-button
+                type="success"
+                size="small"
+                :loading="checkingProviderId === row.id"
+                @click="handleHealthCheck(row)"
+              >
+                健康检查
+              </el-button>
+              <el-button type="primary" size="small" @click="openEditDialog(row)">编辑</el-button>
+              <el-button type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
 
-    <!-- Create/Edit Dialog -->
     <el-dialog
       v-model="dialogVisible"
       :title="isEdit ? '编辑 Provider' : '新增 Provider'"
-      width="600px"
+      :width="uiLayoutTokens.dialogWidth"
     >
-      <el-form :model="form" label-width="120px" :rules="rules" ref="formRef">
-        <el-form-item label="名称" prop="name" v-if="!isEdit">
+      <el-form
+        ref="formRef"
+        :model="form"
+        :label-width="uiLayoutTokens.formLabelWidth"
+        :rules="rules"
+      >
+        <el-form-item v-if="!isEdit" label="名称" prop="name">
           <el-input v-model="form.name" placeholder="唯一标识符，如 qwen_api" />
         </el-form-item>
         <el-form-item label="显示名称" prop="display_name">
@@ -60,22 +80,17 @@
             <el-radio label="cli">CLI</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="Base URL" v-if="form.provider_type === 'api'">
+        <el-form-item v-if="form.provider_type === 'api'" label="Base URL">
           <el-input v-model="form.base_url" placeholder="https://api.example.com/v1" />
         </el-form-item>
-        <el-form-item label="API Key" v-if="form.provider_type === 'api'">
-          <el-input
-            v-model="form.api_key"
-            type="password"
-            show-password
-            placeholder="API Key"
-          />
+        <el-form-item v-if="form.provider_type === 'api'" label="API Key">
+          <el-input v-model="form.api_key" type="password" show-password placeholder="API Key" />
         </el-form-item>
         <el-form-item label="配置(JSON)">
           <el-input
             v-model="configJson"
             type="textarea"
-            :rows="5"
+            :rows="uiFormTokens.providerConfigRows"
             placeholder='{"timeout_sec": 120, "upstream_model": "model-name"}'
           />
         </el-form-item>
@@ -83,7 +98,7 @@
           <el-input
             v-model="form.description"
             type="textarea"
-            :rows="2"
+            :rows="uiFormTokens.shortTextareaRows"
             placeholder="Provider 描述"
           />
         </el-form-item>
@@ -93,28 +108,32 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit" :loading="submitting">
+        <el-button type="primary" :loading="providersStore.submitting" @click="handleSubmit">
           确定
         </el-button>
       </template>
     </el-dialog>
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { computed, onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { providersApi, type Provider, type CreateProviderRequest } from '@/api/providers'
+import { useProvidersStore } from '@/stores/providers'
+import { extractErrorMessage } from '@/stores/helpers'
+import { uiFormTokens, uiLayoutTokens, uiTableTokens } from '@/ui/designTokens'
+import type { CreateProviderRequest, Provider } from '@/types'
 
-const providers = ref<Provider[]>([])
-const loading = ref(false)
+const providersStore = useProvidersStore()
+
 const dialogVisible = ref(false)
 const isEdit = ref(false)
-const submitting = ref(false)
-const formRef = ref()
+const editingId = ref<number | null>(null)
+const checkingProviderId = ref<number | null>(null)
+const formRef = ref<FormInstance>()
 
-const form = ref<CreateProviderRequest>({
+const buildDefaultForm = (): CreateProviderRequest => ({
   name: '',
   display_name: '',
   provider_type: 'api',
@@ -125,51 +144,35 @@ const form = ref<CreateProviderRequest>({
   is_enabled: true,
 })
 
+const form = ref<CreateProviderRequest>(buildDefaultForm())
+
 const configJson = computed({
   get: () => JSON.stringify(form.value.config || {}, null, 2),
-  set: (val: string) => {
+  set: (raw: string) => {
     try {
-      form.value.config = JSON.parse(val)
+      form.value.config = JSON.parse(raw)
     } catch {
-      // Invalid JSON, ignore
+      // 忽略不完整 JSON，提交前会再次校验
     }
   },
 })
 
-const rules = {
+const rules: FormRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   display_name: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
   provider_type: [{ required: true, message: '请选择类型', trigger: 'change' }],
 }
 
-const fetchProviders = async () => {
-  loading.value = true
-  try {
-    providers.value = await providersApi.list()
-  } catch (error) {
-    ElMessage.error('获取 Provider 列表失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-const showCreateDialog = () => {
+const openCreateDialog = () => {
   isEdit.value = false
-  form.value = {
-    name: '',
-    display_name: '',
-    provider_type: 'api',
-    base_url: '',
-    api_key: '',
-    config: {},
-    description: '',
-    is_enabled: true,
-  }
+  editingId.value = null
+  form.value = buildDefaultForm()
   dialogVisible.value = true
 }
 
-const showEditDialog = (row: Provider) => {
+const openEditDialog = (row: Provider) => {
   isEdit.value = true
+  editingId.value = row.id
   form.value = {
     name: row.name,
     display_name: row.display_name,
@@ -185,92 +188,83 @@ const showEditDialog = (row: Provider) => {
 
 const handleSubmit = async () => {
   if (!formRef.value) return
-  
-  await formRef.value.validate(async (valid: boolean) => {
-    if (!valid) return
-    
-    submitting.value = true
-    try {
-      if (isEdit.value) {
-        const row = providers.value.find(p => p.name === form.value.name)
-        if (row) {
-          await providersApi.update(row.id, form.value)
-          ElMessage.success('更新成功')
-        }
-      } else {
-        await providersApi.create(form.value)
-        ElMessage.success('创建成功')
-      }
-      dialogVisible.value = false
-      await fetchProviders()
-    } catch (error) {
-      ElMessage.error(isEdit.value ? '更新失败' : '创建失败')
-    } finally {
-      submitting.value = false
+
+  try {
+    await formRef.value.validate()
+  } catch {
+    return
+  }
+
+  try {
+    if (isEdit.value && editingId.value !== null) {
+      await providersStore.update(editingId.value, form.value)
+      ElMessage.success('更新成功')
+    } else {
+      await providersStore.create(form.value)
+      ElMessage.success('创建成功')
     }
-  })
+    dialogVisible.value = false
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error, isEdit.value ? '更新失败' : '创建失败'))
+  }
 }
 
-const handleStatusChange = async (row: Provider) => {
+const handleStatusChange = async (row: Provider, nextValue: boolean) => {
   try {
-    await providersApi.update(row.id, { is_enabled: row.is_enabled })
+    await providersStore.update(row.id, { is_enabled: nextValue })
     ElMessage.success('状态更新成功')
   } catch (error) {
-    ElMessage.error('状态更新失败')
-    row.is_enabled = !row.is_enabled
+    ElMessage.error(extractErrorMessage(error, '状态更新失败'))
   }
+}
+
+const onStatusChange = (row: Provider, value: string | number | boolean) => {
+  void handleStatusChange(row, Boolean(value))
 }
 
 const handleDelete = async (row: Provider) => {
   try {
-    await ElMessageBox.confirm(
-      `确定要删除 Provider "${row.display_name}" 吗？`,
-      '确认删除',
-      { type: 'warning' }
-    )
-    await providersApi.delete(row.id)
+    await ElMessageBox.confirm(`确定要删除 Provider "${row.display_name}" 吗？`, '确认删除', {
+      type: 'warning',
+    })
+    await providersStore.remove(row.id)
     ElMessage.success('删除成功')
-    await fetchProviders()
-  } catch (error: any) {
+  } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('删除失败')
+      ElMessage.error(extractErrorMessage(error, '删除失败'))
     }
   }
 }
 
-const handleHealthCheck = async (row: Provider & { _checking?: boolean }) => {
-  row._checking = true
+const handleHealthCheck = async (row: Provider) => {
+  checkingProviderId.value = row.id
   try {
-    const result = await providersApi.healthCheck(row.id)
+    const result = await providersStore.checkHealth(row.id)
     if (result.status === 'healthy') {
       ElMessage.success(`${row.display_name} 健康检查通过 (${result.latency_ms}ms)`)
-    } else {
-      ElMessage.warning(`${row.display_name} 健康检查异常: ${result.error_message || result.status}`)
+      return
     }
-  } catch (error: any) {
-    ElMessage.error(`健康检查失败: ${error.response?.data?.detail || error.message}`)
+    ElMessage.warning(`${row.display_name} 健康检查异常: ${result.error_message || result.status}`)
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error, '健康检查失败'))
   } finally {
-    row._checking = false
+    checkingProviderId.value = null
   }
 }
 
-onMounted(fetchProviders)
+onMounted(async () => {
+  try {
+    await providersStore.fetchAll()
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error, '获取 Provider 列表失败'))
+  }
+})
 </script>
 
 <style scoped>
-.providers-page {
-  padding: 20px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
+.action-group {
+  display: inline-flex;
   align-items: center;
-  margin-bottom: 20px;
-}
-
-.page-header h1 {
-  margin: 0;
-  font-size: 24px;
+  gap: var(--mg-space-1);
 }
 </style>
