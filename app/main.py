@@ -8,7 +8,8 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from app.adapters import KimiCliAdapter, QwenApiAdapter
 from app.adapters.base import AdapterError
@@ -31,6 +32,18 @@ from app.schemas import (
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("model-gateway")
+
+SERVICE_NAME = "model-gateway-api"
+HTTP_REQUESTS_TOTAL = Counter(
+    "http_requests_total",
+    "Total HTTP requests handled by the service.",
+    ["service", "method", "path", "status"],
+)
+HTTP_REQUEST_DURATION_SECONDS = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request latency in seconds.",
+    ["service", "method", "path"],
+)
 
 
 def _extract_usage(
@@ -70,7 +83,7 @@ def _extract_task_fields(payload: dict[str, Any]) -> tuple[str | None, str | Non
 def create_app() -> FastAPI:
     settings = get_settings()
 
-    app = FastAPI(title="Model Gateway", version="0.1.0")
+    app = FastAPI(title="Model Gateway", version="0.1.3")
 
     repository = PostgresRepository(settings)
     router_engine = RouterEngine()
@@ -106,7 +119,40 @@ def create_app() -> FastAPI:
         )
         request.state.request_id = request_id
 
-        response = await call_next(request)
+        start_time = time.perf_counter()
+        path = request.url.path
+        status_code = 500
+
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+        except Exception:
+            HTTP_REQUEST_DURATION_SECONDS.labels(
+                service=SERVICE_NAME,
+                method=request.method,
+                path=path,
+            ).observe(time.perf_counter() - start_time)
+            HTTP_REQUESTS_TOTAL.labels(
+                service=SERVICE_NAME,
+                method=request.method,
+                path=path,
+                status=str(status_code),
+            ).inc()
+            raise
+        else:
+            duration = time.perf_counter() - start_time
+            HTTP_REQUEST_DURATION_SECONDS.labels(
+                service=SERVICE_NAME,
+                method=request.method,
+                path=path,
+            ).observe(duration)
+            HTTP_REQUESTS_TOTAL.labels(
+                service=SERVICE_NAME,
+                method=request.method,
+                path=path,
+                status=str(status_code),
+            ).inc()
+
         response.headers["X-Request-Id"] = request_id
         return response
 
@@ -116,6 +162,10 @@ def create_app() -> FastAPI:
         if not db_ok:
             raise HTTPException(status_code=503, detail="database unavailable")
         return {"status": "ok"}
+
+    @app.get("/metrics")
+    async def metrics() -> Response:
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/admin/routes", dependencies=[Depends(require_admin_auth)])
     async def list_routes() -> dict[str, Any]:
