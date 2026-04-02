@@ -17,3 +17,31 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Verify: 验证命令与结果摘要
 - Next: 下一步动作（若 DONE 可写 `None`）
 ```
+
+## [2026-04-02 22:46 +0800] [Codex] [TASK-20260402-change-ui-port-and-stop-local-frontend] [START]
+- Intent: 将 frontend 容器端口改到 8000+ 且避免与现有容器冲突，并关闭本机非容器前端进程
+- Scope: 调整 .env / .env.example 的 GATEWAY_UI_PORT，重建 frontend 容器应用新端口，查杀本机直接启动的前端监听进程
+- Files: changes.log, .env, .env.example
+- Verify: 待执行：docker compose up -d --force-recreate frontend + docker ps 端口核验 + 本机监听端口核验
+- Next: 应用新端口并停止本机前端进程
+
+## [2026-04-02 22:49 +0800] [Codex] [TASK-20260402-change-ui-port-and-stop-local-frontend] [DONE]
+- Intent: 将 frontend 容器端口改到 8000+ 且避免与现有容器冲突，并关闭本机非容器前端进程
+- Scope: 新增/更新 GATEWAY_UI_PORT=8620；重建 frontend 容器；关闭本机直接启动的 Vite/前端监听进程
+- Files: changes.log, .env, .env.example
+- Verify: docker compose up -d --force-recreate frontend 成功；docker ps 显示 model-gateway-ui=0.0.0.0:8620->80；本机 3001 无监听；已终止本机 vite 进程（原 PID 9511，端口 5173）
+- Next: None
+
+## [2026-04-02 23:22 +0800] [Codex] [TASK-20260402-merge-readmes-and-commit] [START]
+- Intent: 合并双 README 内容并更新提交
+- Scope: 将 README-Mac mini.md 内容并入主 README.md，删除重复文档；不改业务代码
+- Files: changes.log, README.md, README-Mac mini.md
+- Verify: 待执行：内容检查 + git diff + 提交信息核对
+- Next: 完成 README 合并并创建新 commit
+
+## [2026-04-02 23:23 +0800] [Codex] [TASK-20260402-merge-readmes-and-commit] [DONE]
+- Intent: 合并双 README 内容并更新提交
+- Scope: 已将 README-Mac mini.md 内容合并为 README.md，删除重复文档并同步管理界面端口为 8620
+- Files: changes.log, README.md, README-Mac mini.md
+- Verify: README 双文件已收敛为单文件；README 中版本/端口信息校对完成
+- Next: None

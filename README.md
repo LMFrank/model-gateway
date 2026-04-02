@@ -100,7 +100,7 @@ curl http://localhost:8080/healthz
 ### 访问地址
 
 - API: http://localhost:8080
-- 管理界面: http://localhost:3001
+- 管理界面: http://localhost:8620
 
 ## 使用示例
 
@@ -176,7 +176,7 @@ OPENAI_API_KEY=your-gateway-token
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `GATEWAY_PORT` | 网关端口 | 8080 |
-| `GATEWAY_UI_PORT` | 管理界面端口 | 3001 |
+| `GATEWAY_UI_PORT` | 管理界面端口 | 8620 |
 | `GATEWAY_CLIENT_TOKEN` | 客户端 Token | - |
 | `GATEWAY_ADMIN_TOKEN` | 管理端 Token | - |
 | `PG_HOST` | PostgreSQL 主机 | localhost |
