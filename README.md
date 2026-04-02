@@ -1,4 +1,4 @@
-# Model Gateway v0.1.2
+# Model Gateway v0.1.3
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/downloads/)
@@ -6,7 +6,7 @@
 
 **OpenAI 兼容的 LLM 网关，统一管理多个 Provider，将 CLI 工具封装为 API。**
 
-**当前版本**: `v0.1.2`（2026-04-02）
+**当前版本**: `v0.1.3`（2026-04-02）
 
 > ⚠️ **声明**: 本项目仅供个人学习研究使用。使用时请遵守各模型官方的服务条款和使用规则。
 
@@ -101,6 +101,30 @@ curl http://localhost:8080/healthz
 
 - API: http://localhost:8080
 - 管理界面: http://localhost:8620
+
+### 可观测接入
+
+项目已按 monitor 中台约定接入：
+
+- `model-gateway` API 服务
+  - `monitor.service=model-gateway-api`
+  - 暴露 `/metrics`
+- `model-gateway-ui` 前端服务
+  - `monitor.service=model-gateway-ui`
+  - 默认仅采集日志，不暴露 Prometheus metrics
+
+接入方式：
+
+```bash
+cd /Users/xushuchi/Library/CloudStorage/OneDrive-个人/Code/stock/model-gateway
+docker compose up -d --build
+```
+
+接入后可在 monitor 中查看：
+
+- Grafana: `http://localhost:3000`
+- Prometheus targets 中的 `model-gateway-api`
+- Loki 中 `service=model-gateway-api|model-gateway-ui` 的日志
 
 ## 使用示例
 
@@ -309,6 +333,7 @@ API Key 存储在数据库，建议：
 
 ## 版本历史
 
+- `v0.1.3` (2026-04-02): 接入 monitor 中台；新增 `/metrics` 暴露；补齐 monitor labels 与共享网络接入；统一 observability 展示口径
 - `v0.1.2` (2026-04-02): 完成前端管理台重构；统一 design-tokens 与共享状态管理；优化前端构建分包并完成生产重建
 - `v0.1.1` (2026-04-01): 修复模型测试与健康状态刷新；新增 CLI Provider 健康探针；修正 MiniMax 上游模型名；补齐 `/v1` 前端代理
 - `v0.1.0` (2026-03-31): Vue 3 管理界面、健康检查、扩展 providers/models

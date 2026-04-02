@@ -9,6 +9,13 @@ services:
       - .env
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
+    labels:
+      monitor.enabled: "true"
+      monitor.logs: "true"
+      monitor.metrics.path: "/metrics"
+      monitor.metrics.port: "8080"
+      monitor.service: "model-gateway-api"
+      monitor.env: "${APP_ENV:-prod}"
     volumes:
       - ${KIMI_HOME_DIR:-./runtime/kimi-home}:/root/.kimi
       - ${CODEX_HOME_DIR:-./runtime/codex-home}:/root/.codex
@@ -16,6 +23,7 @@ services:
     networks:
       - gateway_shared
       - gateway_db
+      - ai_monitor_net
 
   frontend:
     build:
@@ -25,8 +33,14 @@ services:
     restart: unless-stopped
     ports:
       - "${GATEWAY_UI_PORT:-3001}:80"
+    labels:
+      monitor.enabled: "true"
+      monitor.logs: "true"
+      monitor.service: "model-gateway-ui"
+      monitor.env: "${APP_ENV:-prod}"
     networks:
       - gateway_shared
+      - ai_monitor_net
     depends_on:
       - model-gateway
 
@@ -37,3 +51,6 @@ networks:
   gateway_db:
     external: true
     name: ${DB_DOCKER_NETWORK:-gateway_shared_net}
+  ai_monitor_net:
+    external: true
+    name: ai_monitor_net
