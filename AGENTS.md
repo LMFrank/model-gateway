@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-## Multi-AI Collaboration (Codex / Trae / Kimi Code)
+## Multi-AI Collaboration (Codex / Trae / Opens Code)
 
 ### Scope
 - `README.md` 负责项目功能、接口与部署说明。
