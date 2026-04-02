@@ -1,0 +1,77 @@
+:root {
+  /* Typography */
+  --mg-font-family-display: "Avenir Next", "Segoe UI", sans-serif;
+  --mg-font-family-body: "PingFang SC", "Noto Sans SC", sans-serif;
+  --mg-font-family-mono: "JetBrains Mono", "SFMono-Regular", monospace;
+  --mg-font-size-xs: 12px;
+  --mg-font-size-sm: 14px;
+  --mg-font-size-md: 16px;
+  --mg-font-size-lg: 20px;
+  --mg-font-size-xl: 24px;
+  --mg-font-size-stat-lg: 36px;
+  --mg-font-size-stat-md: 28px;
+  --mg-line-height-tight: 1.2;
+  --mg-line-height-body: 1.5;
+  --mg-letter-spacing-brand: 0.06em;
+  --mg-letter-spacing-caption: 0.08em;
+
+  /* Spacing */
+  --mg-space-1: 4px;
+  --mg-space-2: 8px;
+  --mg-space-3: 12px;
+  --mg-space-4: 16px;
+  --mg-space-5: 20px;
+  --mg-space-6: 24px;
+  --mg-space-7: 28px;
+
+  /* Radius */
+  --mg-radius-sm: 6px;
+  --mg-radius-md: 10px;
+  --mg-radius-lg: 14px;
+  --mg-radius-pill: 999px;
+
+  /* Layout */
+  --mg-layout-sidebar-width: 228px;
+  --mg-layout-header-height: 64px;
+  --mg-layout-brand-height: 76px;
+  --mg-layout-page-padding: var(--mg-space-5);
+  --mg-layout-page-padding-compact: var(--mg-space-3);
+  --mg-layout-page-gap: var(--mg-space-4);
+  --mg-layout-card-gap: var(--mg-space-3);
+
+  /* Colors */
+  --mg-color-bg-canvas: #f4f6fb;
+  --mg-color-bg-panel: #ffffff;
+  --mg-color-bg-elevated: #fbfdff;
+  --mg-color-border-soft: #d8deea;
+  --mg-color-border-muted: #e7ebf3;
+
+  --mg-color-text-primary: #172135;
+  --mg-color-text-secondary: #5e6a84;
+  --mg-color-text-on-dark: #f2f7ff;
+  --mg-color-text-on-dark-muted: #b8c4db;
+
+  --mg-color-sidebar-bg-top: #1a2742;
+  --mg-color-sidebar-bg-bottom: #0f1728;
+  --mg-color-sidebar-border: #2a3754;
+  --mg-color-sidebar-hover: #223251;
+  --mg-color-sidebar-active: #2c3d5f;
+
+  --mg-color-accent-strong: #74c0fc;
+  --mg-color-accent-primary: #409eff;
+  --mg-color-success: #67c23a;
+  --mg-color-warning: #e6a23c;
+  --mg-color-danger: #f56c6c;
+  --mg-color-info: #909399;
+
+  /* Gradients */
+  --mg-gradient-sidebar: linear-gradient(
+    180deg,
+    var(--mg-color-sidebar-bg-top) 0%,
+    var(--mg-color-sidebar-bg-bottom) 100%
+  );
+
+  /* Effects */
+  --mg-shadow-soft: 0 8px 20px rgba(15, 23, 40, 0.08);
+  --mg-shadow-card: 0 10px 24px rgba(15, 23, 40, 0.06);
+}

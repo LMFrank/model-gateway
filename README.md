@@ -1,4 +1,4 @@
-# Model Gateway v0.1.1
+# Model Gateway v0.1.2
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/downloads/)
@@ -6,7 +6,7 @@
 
 **OpenAI 兼容的 LLM 网关，统一管理多个 Provider，将 CLI 工具封装为 API。**
 
-**当前版本**: `v0.1.1`（2026-04-01）
+**当前版本**: `v0.1.2`（2026-04-02）
 
 > ⚠️ **声明**: 本项目仅供个人学习研究使用。使用时请遵守各模型官方的服务条款和使用规则。
 
@@ -100,7 +100,7 @@ curl http://localhost:8080/healthz
 ### 访问地址
 
 - API: http://localhost:8080
-- 管理界面: http://localhost:3001
+- 管理界面: http://localhost:8620
 
 ## 使用示例
 
@@ -176,7 +176,7 @@ OPENAI_API_KEY=your-gateway-token
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `GATEWAY_PORT` | 网关端口 | 8080 |
-| `GATEWAY_UI_PORT` | 管理界面端口 | 3001 |
+| `GATEWAY_UI_PORT` | 管理界面端口 | 8620 |
 | `GATEWAY_CLIENT_TOKEN` | 客户端 Token | - |
 | `GATEWAY_ADMIN_TOKEN` | 管理端 Token | - |
 | `PG_HOST` | PostgreSQL 主机 | localhost |
@@ -309,6 +309,7 @@ API Key 存储在数据库，建议：
 
 ## 版本历史
 
+- `v0.1.2` (2026-04-02): 完成前端管理台重构；统一 design-tokens 与共享状态管理；优化前端构建分包并完成生产重建
 - `v0.1.1` (2026-04-01): 修复模型测试与健康状态刷新；新增 CLI Provider 健康探针；修正 MiniMax 上游模型名；补齐 `/v1` 前端代理
 - `v0.1.0` (2026-03-31): Vue 3 管理界面、健康检查、扩展 providers/models
 - `v0.0.5` (2026-03-28): 统一 codex_cli + sub2api 方案

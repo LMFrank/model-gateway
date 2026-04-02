@@ -1,19 +1,54 @@
-import { createRouter, createWebHistory } from 'vue-router'
-import Dashboard from '@/views/Dashboard.vue'
-import Providers from '@/views/Providers.vue'
-import Models from '@/views/Models.vue'
-import Routes from '@/views/Routes.vue'
-import Usage from '@/views/Usage.vue'
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+
+export type NavIconKey = 'Monitor' | 'SetUp' | 'Collection' | 'Share' | 'TrendCharts'
+
+export interface AppRouteMeta {
+  title: string
+  nav: boolean
+  icon?: NavIconKey
+}
+
+export const appRoutes: RouteRecordRaw[] = [
+  {
+    path: '/',
+    name: 'Dashboard',
+    component: () => import('@/views/Dashboard.vue'),
+    meta: { title: '概览', nav: true, icon: 'Monitor' },
+  },
+  {
+    path: '/providers',
+    name: 'Providers',
+    component: () => import('@/views/Providers.vue'),
+    meta: { title: 'Provider 管理', nav: true, icon: 'SetUp' },
+  },
+  {
+    path: '/models',
+    name: 'Models',
+    component: () => import('@/views/Models.vue'),
+    meta: { title: '模型管理', nav: true, icon: 'Collection' },
+  },
+  {
+    path: '/routes',
+    name: 'Routes',
+    component: () => import('@/views/Routes.vue'),
+    meta: { title: '路由规则', nav: true, icon: 'Share' },
+  },
+  {
+    path: '/usage',
+    name: 'Usage',
+    component: () => import('@/views/Usage.vue'),
+    meta: { title: '使用量统计', nav: true, icon: 'TrendCharts' },
+  },
+]
+
+export const navigationRoutes = appRoutes.filter(
+  (route): route is RouteRecordRaw & { meta: AppRouteMeta } =>
+    Boolean((route.meta as AppRouteMeta | undefined)?.nav),
+)
 
 const router = createRouter({
   history: createWebHistory(),
-  routes: [
-    { path: '/', name: 'Dashboard', component: Dashboard },
-    { path: '/providers', name: 'Providers', component: Providers },
-    { path: '/models', name: 'Models', component: Models },
-    { path: '/routes', name: 'Routes', component: Routes },
-    { path: '/usage', name: 'Usage', component: Usage },
-  ],
+  routes: appRoutes,
 })
 
 export default router

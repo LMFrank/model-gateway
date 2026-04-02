@@ -1,146 +1,175 @@
 <template>
-  <div class="usage-page">
-    <div class="page-header">
-      <h1>使用量统计</h1>
+  <section class="usage-page mg-page">
+    <div class="page-header mg-page-header">
+      <h1 class="mg-page-title">使用量统计</h1>
       <el-date-picker
         v-model="dateRange"
         type="daterange"
+        unlink-panels
         range-separator="至"
         start-placeholder="开始日期"
         end-placeholder="结束日期"
-        @change="fetchUsage"
+        @change="refreshUsage"
       />
     </div>
 
-    <el-row :gutter="20" class="summary-row">
-      <el-col :span="6">
-        <el-card>
-          <div class="stat-item">
-            <div class="stat-value">{{ usageData.total_calls || 0 }}</div>
-            <div class="stat-label">总调用次数</div>
+    <el-row :gutter="uiLayoutTokens.gridGutter" class="summary-row">
+      <el-col :xs="24" :sm="12" :lg="6">
+        <el-card class="summary-card">
+          <div class="mg-stat-item">
+            <div class="stat-value mg-stat-value">{{ summary.total_calls }}</div>
+            <div class="mg-stat-label">总调用次数</div>
           </div>
         </el-card>
       </el-col>
-      <el-col :span="6">
-        <el-card>
-          <div class="stat-item">
-            <div class="stat-value">{{ usageData.failed_calls || 0 }}</div>
-            <div class="stat-label">失败次数</div>
+      <el-col :xs="24" :sm="12" :lg="6">
+        <el-card class="summary-card">
+          <div class="mg-stat-item">
+            <div class="stat-value mg-stat-value">{{ summary.failed_calls }}</div>
+            <div class="mg-stat-label">失败次数</div>
           </div>
         </el-card>
       </el-col>
-      <el-col :span="6">
-        <el-card>
-          <div class="stat-item">
-            <div class="stat-value">{{ formatRate(usageData.failure_rate) }}</div>
-            <div class="stat-label">失败率</div>
+      <el-col :xs="24" :sm="12" :lg="6">
+        <el-card class="summary-card">
+          <div class="mg-stat-item">
+            <div class="stat-value mg-stat-value">{{ formatRate(summary.failure_rate) }}</div>
+            <div class="mg-stat-label">失败率</div>
           </div>
         </el-card>
       </el-col>
-      <el-col :span="6">
-        <el-card>
-          <div class="stat-item">
-            <div class="stat-value">{{ usageData.total_tokens || 0 }}</div>
-            <div class="stat-label">总 Token 数</div>
+      <el-col :xs="24" :sm="12" :lg="6">
+        <el-card class="summary-card">
+          <div class="mg-stat-item">
+            <div class="stat-value mg-stat-value">{{ summary.total_tokens }}</div>
+            <div class="mg-stat-label">总 Token 数</div>
           </div>
         </el-card>
       </el-col>
     </el-row>
 
-    <el-card class="detail-card">
-      <template #header>
-        <span>按模型统计</span>
-      </template>
-      <el-table :data="usageData.by_model || []" style="width: 100%">
-        <el-table-column prop="model_name" label="模型" />
-        <el-table-column prop="call_count" label="调用次数" width="120" />
-        <el-table-column prop="failed_calls" label="失败次数" width="120" />
-        <el-table-column prop="failure_rate" label="失败率" width="120">
-          <template #default="{ row }">
-            {{ formatRate(row.failure_rate) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="total_tokens" label="Token 数" width="150" />
-      </el-table>
-    </el-card>
-  </div>
+    <el-row :gutter="uiLayoutTokens.gridGutter">
+      <el-col :xs="24" :lg="14">
+        <el-card class="detail-card" v-loading="usageStore.loading">
+          <template #header>按模型统计</template>
+          <el-table :data="summary.by_model" row-key="model_name">
+            <el-table-column
+              prop="model_name"
+              label="模型"
+              :min-width="uiTableTokens.usage.modelNameMinWidth"
+            />
+            <el-table-column prop="call_count" label="调用次数" :width="uiTableTokens.usage.metricWidth" />
+            <el-table-column
+              prop="failed_calls"
+              label="失败次数"
+              :width="uiTableTokens.usage.metricWidth"
+            />
+            <el-table-column label="失败率" :width="uiTableTokens.usage.metricWidth">
+              <template #default="{ row }">
+                {{ formatRate(row.failure_rate) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="total_tokens" label="Token 数" :width="uiTableTokens.usage.tokenWidth" />
+            <el-table-column
+              prop="p95_latency_ms"
+              label="P95 延迟(ms)"
+              :width="uiTableTokens.usage.latencyWidth"
+            />
+          </el-table>
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :lg="10">
+        <el-card class="detail-card" v-loading="usageStore.loading">
+          <template #header>按 Provider 统计</template>
+          <el-table :data="summary.by_provider" row-key="provider_name">
+            <el-table-column
+              prop="provider_name"
+              label="Provider"
+              :min-width="uiTableTokens.usage.providerMinWidth"
+            />
+            <el-table-column
+              prop="call_count"
+              label="调用"
+              :width="uiTableTokens.usage.compactMetricWidth"
+            />
+            <el-table-column
+              prop="failed_calls"
+              label="失败"
+              :width="uiTableTokens.usage.compactMetricWidth"
+            />
+            <el-table-column label="失败率" :width="uiTableTokens.usage.compactRateWidth">
+              <template #default="{ row }">
+                {{ formatRate(row.failure_rate) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="p95_latency_ms" label="P95" :width="uiTableTokens.usage.compactMetricWidth" />
+          </el-table>
+        </el-card>
+      </el-col>
+    </el-row>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import client from '@/api/client'
+import { useUsageStore } from '@/stores/usage'
+import { extractErrorMessage } from '@/stores/helpers'
+import { uiLayoutTokens, uiTableTokens } from '@/ui/designTokens'
+import type { UsageSummary } from '@/types'
 
+const usageStore = useUsageStore()
 const dateRange = ref<[Date, Date] | null>(null)
-const usageData = ref<any>({})
 
-const fetchUsage = async () => {
+const emptySummary: UsageSummary = {
+  date_from: '',
+  date_to: '',
+  total_calls: 0,
+  failed_calls: 0,
+  failure_rate: 0,
+  total_tokens: 0,
+  p95_latency_ms: null,
+  by_model: [],
+  by_provider: [],
+}
+
+const summary = computed<UsageSummary>(() => usageStore.summary || emptySummary)
+
+const formatRate = (rate: number): string => `${(rate * 100).toFixed(2)}%`
+
+const refreshUsage = async () => {
   try {
-    const params: any = {}
-    if (dateRange.value) {
-      params.date_from = dateRange.value[0].toISOString().split('T')[0]
-      params.date_to = dateRange.value[1].toISOString().split('T')[0]
-    }
-    const response = await client.get('/admin/usage/summary', { params })
-    usageData.value = response.data
+    const dateFrom = dateRange.value?.[0]?.toISOString().split('T')[0]
+    const dateTo = dateRange.value?.[1]?.toISOString().split('T')[0]
+    await usageStore.fetchSummary(dateFrom, dateTo)
   } catch (error) {
-    ElMessage.error('获取使用量统计失败')
+    ElMessage.error(extractErrorMessage(error, '获取使用量统计失败'))
   }
 }
 
-const formatRate = (rate: number) => {
-  if (rate === undefined || rate === null) return '0%'
-  return `${(rate * 100).toFixed(2)}%`
-}
-
-onMounted(() => {
-  // Default to last 7 days
+onMounted(async () => {
   const end = new Date()
   const start = new Date()
   start.setDate(start.getDate() - 6)
   dateRange.value = [start, end]
-  fetchUsage()
+  await refreshUsage()
 })
 </script>
 
 <style scoped>
-.usage-page {
-  padding: 20px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.page-header h1 {
-  margin: 0;
-  font-size: 24px;
-}
-
 .summary-row {
-  margin-bottom: 20px;
+  margin-bottom: 0;
 }
 
-.stat-item {
-  text-align: center;
+.summary-card {
+  margin-bottom: var(--mg-space-3);
 }
 
 .stat-value {
-  font-size: 28px;
-  font-weight: bold;
-  color: #409EFF;
-}
-
-.stat-label {
-  font-size: 14px;
-  color: #909399;
-  margin-top: 8px;
+  font-size: var(--mg-font-size-stat-md);
 }
 
 .detail-card {
-  margin-top: 20px;
+  margin-bottom: var(--mg-space-3);
 }
 </style>
