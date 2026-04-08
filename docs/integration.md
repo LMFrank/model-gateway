@@ -265,6 +265,7 @@ services:
 | `qwen3.5-plus` | Qwen3.5 Plus | 百炼 Coding Plan |
 | `qwen3-max` | Qwen3 Max | 百炼 Coding Plan |
 | `qwen3-coder` | Qwen3 Coder | 百炼 Coding Plan |
+| `qwen3-coder-plus` | Qwen3 Coder Plus | 百炼 Coding Plan |
 | `kimi-k2.5` | Kimi K2.5 | 百炼 Coding Plan |
 | `glm-5` | GLM-5 | 百炼 Coding Plan |
 | `qwen3-max-general` | Qwen3 Max | 百炼按 Token |
@@ -397,6 +398,6 @@ curl -X POST http://localhost:8080/api/routes \
 ## 最佳实践
 
 1. **优先使用 API 类型 Provider**: 稳定性更好，易于调试
-2. **为不同用途配置不同 model_key**: 如 `qwen3-max` 用于推理，`qwen3-coder` 用于代码
+2. **为不同用途配置不同 model_key**: 如 `qwen3-max` 用于推理，`qwen3-coder-plus` 用于代码
 3. **定期检查健康状态**: 使用管理界面或 API 定期检测
 4. **监控调用日志**: 通过 `/api/calls` 接口查看调用记录
