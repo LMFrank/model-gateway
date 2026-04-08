@@ -1,4 +1,4 @@
-# Model Gateway v0.1.4
+# Model Gateway v0.1.5
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/downloads/)
@@ -6,7 +6,7 @@
 
 **OpenAI 兼容的 LLM 网关，统一管理多个 Provider，将 CLI 工具封装为 API。**
 
-**当前版本**: `v0.1.4`（2026-04-08）
+**当前版本**: `v0.1.5`（2026-04-08）
 
 > ⚠️ **声明**: 本项目仅供个人学习研究使用。使用时请遵守各模型官方的服务条款和使用规则。
 
@@ -179,6 +179,7 @@ OPENAI_API_KEY=your-gateway-token
 | `qwen3.5-plus` | 百炼 Coding Plan | 订阅制 |
 | `qwen3-max` | 百炼 Coding Plan | 订阅制 |
 | `qwen3-coder` | 百炼 Coding Plan | 订阅制 |
+| `qwen3-coder-plus` | 百炼 Coding Plan | 订阅制 |
 | `kimi-k2.5` | 百炼 Coding Plan | 订阅制 |
 | `glm-5` | 百炼 Coding Plan | 订阅制 |
 | `deepseek-chat` | DeepSeek 官方 | 按 Token |
@@ -333,6 +334,7 @@ API Key 存储在数据库，建议：
 
 ## 版本历史
 
+- `v0.1.5` (2026-04-08): 同步百炼 Coding Plan 的 Qwen 模型配置（新增 `qwen3-coder-plus`）；新增幂等迁移脚本 `v0.3.1`；完成生产环境迁移与接口实测验证
 - `v0.1.4` (2026-04-08): 完成健康检查交互优化（显示进行中与状态中文化）；补齐前端 ESLint 配置；补齐本地测试依赖并完成生产链路验证
 - `v0.1.3` (2026-04-02): 接入 monitor 中台；新增 `/metrics` 暴露；补齐 monitor labels 与共享网络接入；统一 observability 展示口径
 - `v0.1.2` (2026-04-02): 完成前端管理台重构；统一 design-tokens 与共享状态管理；优化前端构建分包并完成生产重建
