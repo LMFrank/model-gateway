@@ -83,7 +83,7 @@ def _extract_task_fields(payload: dict[str, Any]) -> tuple[str | None, str | Non
 def create_app() -> FastAPI:
     settings = get_settings()
 
-    app = FastAPI(title="Model Gateway", version="0.1.3")
+    app = FastAPI(title="Model Gateway", version="0.1.4")
 
     repository = PostgresRepository(settings)
     router_engine = RouterEngine()

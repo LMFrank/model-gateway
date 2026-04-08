@@ -32,7 +32,7 @@ services:
     container_name: ${GATEWAY_CONTAINER_NAME:-model-gateway}-ui
     restart: unless-stopped
     ports:
-      - "${GATEWAY_UI_PORT:-3001}:80"
+      - "${GATEWAY_UI_PORT:-8620}:80"
     labels:
       monitor.enabled: "true"
       monitor.logs: "true"
