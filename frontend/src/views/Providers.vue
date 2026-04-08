@@ -123,7 +123,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { useProvidersStore } from '@/stores/providers'
 import { extractErrorMessage } from '@/stores/helpers'
 import { uiFormTokens, uiLayoutTokens, uiTableTokens } from '@/ui/designTokens'
-import type { CreateProviderRequest, Provider } from '@/types'
+import type { CreateProviderRequest, HealthStatus, Provider } from '@/types'
 
 const providersStore = useProvidersStore()
 
@@ -161,6 +161,12 @@ const rules: FormRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   display_name: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
   provider_type: [{ required: true, message: '请选择类型', trigger: 'change' }],
+}
+
+const getHealthLabel = (status: HealthStatus) => {
+  if (status === 'healthy') return '健康'
+  if (status === 'unhealthy') return '异常'
+  return '未知'
 }
 
 const openCreateDialog = () => {
@@ -238,16 +244,24 @@ const handleDelete = async (row: Provider) => {
 
 const handleHealthCheck = async (row: Provider) => {
   checkingProviderId.value = row.id
+  const checkingTip = ElMessage({
+    type: 'info',
+    message: `${row.display_name} 健康检查进行中，请稍候...`,
+    duration: 0,
+  })
   try {
     const result = await providersStore.checkHealth(row.id)
     if (result.status === 'healthy') {
       ElMessage.success(`${row.display_name} 健康检查通过 (${result.latency_ms}ms)`)
       return
     }
-    ElMessage.warning(`${row.display_name} 健康检查异常: ${result.error_message || result.status}`)
+    const healthLabel = getHealthLabel(result.status)
+    const reason = result.error_message?.trim() || `返回状态：${healthLabel}`
+    ElMessage.warning(`${row.display_name} 健康检查未通过（${healthLabel}）：${reason}`)
   } catch (error) {
     ElMessage.error(extractErrorMessage(error, '健康检查失败'))
   } finally {
+    checkingTip.close()
     checkingProviderId.value = null
   }
 }

@@ -38,3 +38,4 @@ runtime/
 .DS_Store
 .idea/
 .vscode/
+.omx/
