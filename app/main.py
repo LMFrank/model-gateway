@@ -33,7 +33,7 @@ from app.schemas import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("model-gateway")
 
-APP_VERSION = "0.1.5"
+APP_VERSION = "0.1.6"
 SERVICE_NAME = "model-gateway-api"
 HTTP_REQUESTS_TOTAL = Counter(
     "http_requests_total",

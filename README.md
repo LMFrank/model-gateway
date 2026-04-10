@@ -1,4 +1,4 @@
-# Model Gateway v0.1.5
+# Model Gateway v0.1.6
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/downloads/)
@@ -6,7 +6,7 @@
 
 **OpenAI 兼容的 LLM 网关，统一管理多个 Provider，将 CLI 工具封装为 API。**
 
-**当前版本**: `v0.1.5`（2026-04-08）
+**当前版本**: `v0.1.6`（2026-04-10）
 
 > ⚠️ **声明**: 本项目仅供个人学习研究使用。使用时请遵守各模型官方的服务条款和使用规则。
 
@@ -366,6 +366,7 @@ API Key 存储在数据库，建议：
 
 ## 版本历史
 
+- `v0.1.6` (2026-04-10): 补齐 admin/client Bearer 鉴权；新增 client-safe `/v1/models`；provider secret 默认脱敏；新增 `sql/bootstrap_model_gateway.sql` 并完成空库 bootstrap smoke 验证；废弃 runtime fallback 语义
 - `v0.1.5` (2026-04-08): 同步百炼 Coding Plan 的 Qwen 模型配置（新增 `qwen3-coder-plus`）；新增幂等迁移脚本 `v0.3.1`；完成生产环境迁移与接口实测验证
 - `v0.1.4` (2026-04-08): 完成健康检查交互优化（显示进行中与状态中文化）；补齐前端 ESLint 配置；补齐本地测试依赖并完成生产链路验证
 - `v0.1.3` (2026-04-02): 接入 monitor 中台；新增 `/metrics` 暴露；补齐 monitor labels 与共享网络接入；统一 observability 展示口径
