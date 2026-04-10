@@ -36,7 +36,9 @@ class ProviderOut(BaseModel):
     display_name: str
     provider_type: str
     base_url: str | None
-    api_key: str | None
+    api_key: str | None = None
+    masked_api_key: str | None = None
+    has_api_key: bool = False
     config: dict[str, Any]
     description: str | None
     is_enabled: bool
@@ -155,7 +157,11 @@ class RouteRulesV2ListResponse(BaseModel):
 class RouteRuleUpsert(BaseModel):
     model_name: str = Field(min_length=1, max_length=128)
     primary_provider: str = Field(min_length=1, max_length=64)
-    fallback_provider: str | None = Field(default=None, max_length=64)
+    fallback_provider: str | None = Field(
+        default=None,
+        max_length=64,
+        description="已废弃；当前路由引擎只使用 primary_provider。",
+    )
     is_enabled: bool = True
     description: str | None = Field(default=None, max_length=255)
 

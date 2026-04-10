@@ -14,7 +14,8 @@ def test_router_engine_exact_match_success() -> None:
         },
     )
     assert decision.primary_provider == "kimi_cli"
-    assert decision.provider_chain == ["kimi_cli", "qwen_api"]
+    assert decision.fallback_provider is None
+    assert decision.provider_chain == ["kimi_cli"]
 
 
 def test_router_engine_disabled_rule() -> None:

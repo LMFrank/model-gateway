@@ -33,6 +33,7 @@ from app.schemas import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("model-gateway")
 
+APP_VERSION = "0.1.5"
 SERVICE_NAME = "model-gateway-api"
 HTTP_REQUESTS_TOTAL = Counter(
     "http_requests_total",
@@ -83,7 +84,7 @@ def _extract_task_fields(payload: dict[str, Any]) -> tuple[str | None, str | Non
 def create_app() -> FastAPI:
     settings = get_settings()
 
-    app = FastAPI(title="Model Gateway", version="0.1.4")
+    app = FastAPI(title="Model Gateway", version=APP_VERSION)
 
     repository = PostgresRepository(settings)
     router_engine = RouterEngine()
@@ -167,6 +168,29 @@ def create_app() -> FastAPI:
     async def metrics() -> Response:
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
+    @app.get("/v1/models", dependencies=[Depends(require_client_auth)])
+    async def list_client_models() -> dict[str, Any]:
+        items = await run_in_threadpool(repository.list_route_rules_v2)
+        active_items = [
+            item
+            for item in items
+            if item.get("is_enabled")
+            and item.get("model", {}).get("is_active")
+            and item.get("provider")
+        ]
+        return {
+            "object": "list",
+            "data": [
+                {
+                    "id": item["model_key"],
+                    "object": "model",
+                    "owned_by": item["provider"]["name"],
+                    "display_name": item["model"]["display_name"],
+                }
+                for item in active_items
+            ],
+        }
+
     @app.get("/admin/routes", dependencies=[Depends(require_admin_auth)])
     async def list_routes() -> dict[str, Any]:
         items = await run_in_threadpool(repository.list_route_rules)
@@ -176,6 +200,11 @@ def create_app() -> FastAPI:
     async def upsert_routes(body: RouteRulesUpsertRequest) -> dict[str, Any]:
         if not body.rules:
             raise HTTPException(status_code=400, detail="rules cannot be empty")
+        if any(item.fallback_provider for item in body.rules):
+            raise HTTPException(
+                status_code=400,
+                detail="fallback_provider is deprecated and no longer supported",
+            )
         await run_in_threadpool(
             repository.upsert_route_rules, [item.model_dump() for item in body.rules]
         )

@@ -24,6 +24,11 @@ Model Gateway 兼容 OpenAI API 格式，任何支持 OpenAI API 的应用都可
 2. 已获取 `GATEWAY_CLIENT_TOKEN`
 3. 目标应用与 Model Gateway 网络互通
 
+> 说明：
+> - 客户端调用 `/v1/*` 使用 `GATEWAY_CLIENT_TOKEN`
+> - 管理接口 `/api/*`、`/admin/*` 使用 `GATEWAY_ADMIN_TOKEN`
+> - legacy 结构中的 `fallback_provider` 已废弃，当前运行时只使用 `primary_provider`
+
 ## 接入方式
 
 ### 方式一: 环境变量注入
@@ -81,22 +86,24 @@ config = get_model_config("KIMI_CODE")
 
 #### 动态发现模型（推荐）
 
-当 gateway 新增 model 后，其他项目可以通过 API 自动感知：
+当 gateway 新增 model 后，其他项目可以通过 **client-safe** 的 `/v1/models` 自动感知：
 
 **查询可用模型列表：**
 
 ```bash
-curl http://model-gateway:8080/api/models
+curl http://model-gateway:8080/v1/models \
+  -H "Authorization: Bearer ${GATEWAY_CLIENT_TOKEN}"
 ```
 
 **响应示例：**
 
 ```json
 {
-  "items": [
-    {"model_key": "qwen3-max", "display_name": "Qwen3 Max", "provider": {"name": "bailian_coding_api"}},
-    {"model_key": "kimi-k2.5", "display_name": "Kimi K2.5", "provider": {"name": "bailian_coding_api"}},
-    {"model_key": "deepseek-chat", "display_name": "DeepSeek Chat", "provider": {"name": "deepseek_api"}}
+  "object": "list",
+  "data": [
+    {"id": "qwen3-max", "object": "model", "owned_by": "bailian_coding_api", "display_name": "Qwen3 Max"},
+    {"id": "kimi-k2.5", "object": "model", "owned_by": "bailian_coding_api", "display_name": "Kimi K2.5"},
+    {"id": "deepseek-chat", "object": "model", "owned_by": "deepseek_api", "display_name": "DeepSeek Chat"}
   ]
 }
 ```
@@ -112,14 +119,20 @@ class GatewayClient:
 
     def list_models(self) -> list[str]:
         """获取所有可用模型"""
-        response = requests.get(f"{self.base_url}/api/models")
-        return [m["model_key"] for m in response.json()["items"]]
+        response = requests.get(
+            f"{self.base_url}/v1/models",
+            headers={"Authorization": "Bearer YOUR_GATEWAY_CLIENT_TOKEN"},
+        )
+        return [m["id"] for m in response.json()["data"]]
 
     def get_model_info(self, model_key: str) -> dict:
         """获取模型详情"""
-        response = requests.get(f"{self.base_url}/api/models")
-        for m in response.json()["items"]:
-            if m["model_key"] == model_key:
+        response = requests.get(
+            f"{self.base_url}/v1/models",
+            headers={"Authorization": "Bearer YOUR_GATEWAY_CLIENT_TOKEN"},
+        )
+        for m in response.json()["data"]:
+            if m["id"] == model_key:
                 return m
         return None
 
@@ -298,6 +311,7 @@ curl -X POST http://localhost:8080/api/providers \
 
 # 2. 创建 Model
 curl -X POST http://localhost:8080/api/models \
+  -H "Authorization: Bearer ${GATEWAY_ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "provider_id": 7,
@@ -309,16 +323,23 @@ curl -X POST http://localhost:8080/api/models \
 
 # 3. 创建路由规则
 curl -X POST http://localhost:8080/api/routes \
+  -H "Authorization: Bearer ${GATEWAY_ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
-    "model_name": "new-model",
-    "primary_provider": "new_api"
+    "rules": [
+      {
+        "model_key": "new-model",
+        "is_enabled": true,
+        "priority": 0,
+        "description": "New Model route"
+      }
+    ]
   }'
 ```
 
 ### 2. 通过管理界面
 
-访问 http://localhost:3001，在对应页面添加：
+访问 http://localhost:8620（本地开发态 Vite 为 `http://localhost:3000`），在对应页面添加：
 1. Providers → 新增 Provider
 2. Models → 新增 Model
 3. Routes → 新增路由规则
@@ -366,10 +387,12 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 **排查**:
 ```bash
 # 检查路由配置
-curl http://localhost:8080/api/routes
+curl http://localhost:8080/api/routes \
+  -H "Authorization: Bearer ${GATEWAY_ADMIN_TOKEN}"
 
 # 检查 Provider 配置
-curl http://localhost:8080/api/providers
+curl http://localhost:8080/api/providers \
+  -H "Authorization: Bearer ${GATEWAY_ADMIN_TOKEN}"
 
 # 检查健康状态
 curl -X POST http://localhost:8080/api/health/check/model/{id}
@@ -382,11 +405,14 @@ curl -X POST http://localhost:8080/api/health/check/model/{id}
 **解决**:
 ```bash
 # 检查 model 是否存在
-curl http://localhost:8080/api/models | grep "your-model-key"
+curl http://localhost:8080/v1/models \
+  -H "Authorization: Bearer ${GATEWAY_CLIENT_TOKEN}" | grep "your-model-key"
 
 # 添加路由规则
 curl -X POST http://localhost:8080/api/routes \
-  -d '{"model_name": "your-model-key", "primary_provider": "provider_name"}'
+  -H "Authorization: Bearer ${GATEWAY_ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"rules":[{"model_key":"your-model-key","is_enabled":true,"priority":0,"description":"Manual route"}]}'
 ```
 
 ### 3. CLI 模型返回 "command not found"

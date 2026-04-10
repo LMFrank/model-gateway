@@ -84,7 +84,15 @@
           <el-input v-model="form.base_url" placeholder="https://api.example.com/v1" />
         </el-form-item>
         <el-form-item v-if="form.provider_type === 'api'" label="API Key">
-          <el-input v-model="form.api_key" type="password" show-password placeholder="API Key" />
+          <el-input
+            v-model="form.api_key"
+            type="password"
+            show-password
+            :placeholder="apiKeyPlaceholder"
+          />
+          <div v-if="isEdit && currentMaskedApiKey" class="mg-form-help">
+            当前已配置密钥：{{ currentMaskedApiKey }}；留空表示不更新。
+          </div>
         </el-form-item>
         <el-form-item label="配置(JSON)">
           <el-input
@@ -131,6 +139,7 @@ const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editingId = ref<number | null>(null)
 const checkingProviderId = ref<number | null>(null)
+const currentMaskedApiKey = ref<string | null>(null)
 const formRef = ref<FormInstance>()
 
 const buildDefaultForm = (): CreateProviderRequest => ({
@@ -157,6 +166,10 @@ const configJson = computed({
   },
 })
 
+const apiKeyPlaceholder = computed(() =>
+  isEdit.value ? '留空表示不更新现有 API Key' : 'API Key',
+)
+
 const rules: FormRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   display_name: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
@@ -172,6 +185,7 @@ const getHealthLabel = (status: HealthStatus) => {
 const openCreateDialog = () => {
   isEdit.value = false
   editingId.value = null
+  currentMaskedApiKey.value = null
   form.value = buildDefaultForm()
   dialogVisible.value = true
 }
@@ -184,11 +198,12 @@ const openEditDialog = (row: Provider) => {
     display_name: row.display_name,
     provider_type: row.provider_type,
     base_url: row.base_url || '',
-    api_key: row.api_key || '',
+    api_key: '',
     config: row.config || {},
     description: row.description || '',
     is_enabled: row.is_enabled,
   }
+  currentMaskedApiKey.value = row.masked_api_key || (row.has_api_key ? '已配置' : null)
   dialogVisible.value = true
 }
 
@@ -280,5 +295,12 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: var(--mg-space-1);
+}
+
+.mg-form-help {
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
 }
 </style>

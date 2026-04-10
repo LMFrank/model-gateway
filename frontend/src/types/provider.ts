@@ -9,6 +9,8 @@ export interface Provider {
   provider_type: ProviderType
   base_url: string | null
   api_key: string | null
+  masked_api_key: string | null
+  has_api_key: boolean
   config: JsonObject
   description: string | null
   is_enabled: boolean

@@ -42,7 +42,7 @@
           <h2>{{ currentTitle }}</h2>
         </div>
         <div class="header-right">
-          <span class="version-chip">v0.1.4</span>
+          <span class="version-chip">v0.1.5</span>
         </div>
       </el-header>
       <el-main class="shell-main">

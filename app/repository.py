@@ -11,6 +11,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
 from app.config import Settings
+from app.crypto import ApiKeyCrypto
 
 
 class RepositoryError(Exception):
@@ -20,6 +21,10 @@ class RepositoryError(Exception):
 class PostgresRepository:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.api_key_crypto = ApiKeyCrypto(
+            settings.api_key_encryption_key,
+            enabled=settings.encrypt_api_keys,
+        )
 
     def _get_conn(self) -> psycopg.Connection:
         return psycopg.connect(
@@ -86,13 +91,79 @@ class PostgresRepository:
             return None
         return Json(value)
 
+    @staticmethod
+    def _normalize_optional_text(value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return str(value)
+
+    @staticmethod
+    def _mask_api_key(value: str | None) -> str | None:
+        if not value:
+            return None
+        if len(value) <= 6:
+            return "*" * len(value)
+        return f"{value[:3]}***{value[-4:]}"
+
+    def _decrypt_api_key(self, value: Any) -> str | None:
+        normalized = self._normalize_optional_text(value)
+        if not normalized:
+            return None
+        return self.api_key_crypto.decrypt(normalized)
+
+    def _encrypt_api_key(self, value: Any) -> str | None:
+        normalized = self._normalize_optional_text(value)
+        if not normalized:
+            return None
+        return self.api_key_crypto.encrypt(normalized)
+
+    def _provider_row_to_dict(
+        self, row: dict[str, Any], *, include_secret: bool = False
+    ) -> dict[str, Any]:
+        api_key = self._decrypt_api_key(row.get("api_key"))
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "display_name": row["display_name"],
+            "provider_type": row["provider_type"],
+            "base_url": row["base_url"],
+            "api_key": api_key if include_secret else None,
+            "masked_api_key": self._mask_api_key(api_key),
+            "has_api_key": bool(api_key),
+            "config": self._json_load(row.get("config_json")) or {},
+            "description": row["description"],
+            "is_enabled": bool(row.get("is_enabled", True)),
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        }
+
     def healthcheck(self) -> bool:
+        required_tables = (
+            "providers",
+            "models",
+            "route_rules_v2",
+            "health_checks",
+            "route_rules",
+            "call_logs",
+            "daily_usage_agg",
+        )
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute("SELECT 1")
-                    cursor.fetchone()
-            return True
+                    cursor.execute(
+                        """
+                        SELECT tablename
+                        FROM pg_tables
+                        WHERE schemaname = 'public'
+                          AND tablename = ANY(%s)
+                        """,
+                        (list(required_tables),),
+                    )
+                    existing = {row["tablename"] for row in cursor.fetchall()}
+            return all(table in existing for table in required_tables)
         except Exception:
             return False
 
@@ -115,21 +186,11 @@ class PostgresRepository:
                 row = cursor.fetchone()
         if not row:
             return None
-        return {
-            "id": row["id"],
-            "name": row["name"],
-            "display_name": row["display_name"],
-            "provider_type": row["provider_type"],
-            "base_url": row["base_url"],
-            "api_key": row["api_key"],
-            "config": self._json_load(row.get("config_json")) or {},
-            "description": row["description"],
-            "is_enabled": bool(row.get("is_enabled", True)),
-            "created_at": row.get("created_at"),
-            "updated_at": row.get("updated_at"),
-        }
+        return self._provider_row_to_dict(row)
 
-    def get_provider_by_name(self, name: str) -> dict[str, Any] | None:
+    def get_provider_by_name(
+        self, name: str, *, include_secret: bool = True
+    ) -> dict[str, Any] | None:
         """根据名称获取 Provider"""
         sql = """
         SELECT id, name, display_name, provider_type, base_url, api_key, 
@@ -144,19 +205,7 @@ class PostgresRepository:
                 row = cursor.fetchone()
         if not row:
             return None
-        return {
-            "id": row["id"],
-            "name": row["name"],
-            "display_name": row["display_name"],
-            "provider_type": row["provider_type"],
-            "base_url": row["base_url"],
-            "api_key": row["api_key"],
-            "config": self._json_load(row.get("config_json")) or {},
-            "description": row["description"],
-            "is_enabled": bool(row.get("is_enabled", True)),
-            "created_at": row.get("created_at"),
-            "updated_at": row.get("updated_at"),
-        }
+        return self._provider_row_to_dict(row, include_secret=include_secret)
 
     def list_providers(self) -> list[dict[str, Any]]:
         """列出所有 Providers"""
@@ -173,21 +222,7 @@ class PostgresRepository:
 
         out = []
         for row in rows:
-            out.append(
-                {
-                    "id": row["id"],
-                    "name": row["name"],
-                    "display_name": row["display_name"],
-                    "provider_type": row["provider_type"],
-                    "base_url": row["base_url"],
-                    "api_key": row["api_key"],
-                    "config": self._json_load(row.get("config_json")) or {},
-                    "description": row["description"],
-                    "is_enabled": bool(row.get("is_enabled", True)),
-                    "created_at": row.get("created_at"),
-                    "updated_at": row.get("updated_at"),
-                }
-            )
+            out.append(self._provider_row_to_dict(row))
         return out
 
     def create_provider(self, data: dict[str, Any]) -> int:
@@ -203,7 +238,7 @@ class PostgresRepository:
             data["display_name"],
             data["provider_type"],
             data.get("base_url"),
-            data.get("api_key"),
+            self._encrypt_api_key(data.get("api_key")),
             self._to_json_param(self._safe_json_value(data.get("config", {}))),
             data.get("description"),
             bool(data.get("is_enabled", True)),
@@ -228,9 +263,9 @@ class PostgresRepository:
         if "base_url" in data:
             fields.append("base_url = %s")
             values.append(data["base_url"])
-        if "api_key" in data:
+        if "api_key" in data and self._normalize_optional_text(data.get("api_key")):
             fields.append("api_key = %s")
-            values.append(data["api_key"])
+            values.append(self._encrypt_api_key(data["api_key"]))
         if "config" in data:
             fields.append("config_json = %s")
             values.append(self._to_json_param(self._safe_json_value(data["config"])))
@@ -592,7 +627,7 @@ class PostgresRepository:
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any] | None:
         """获取 Provider 配置 (Legacy - 使用新 providers 表)"""
-        provider = self.get_provider_by_name(provider_name)
+        provider = self.get_provider_by_name(provider_name, include_secret=True)
         if not provider:
             return None
 
@@ -611,9 +646,14 @@ class PostgresRepository:
 
     def list_provider_configs(self) -> list[dict[str, Any]]:
         """列出所有 Provider 配置 (Legacy - 使用新 providers 表)"""
-        providers = self.list_providers()
+        providers = [
+            self.get_provider_by_name(item["name"], include_secret=True)
+            for item in self.list_providers()
+        ]
         out = []
         for provider in providers:
+            if not provider:
+                continue
             config = provider.get("config", {}).copy()
             config["base_url"] = provider.get("base_url")
             config["api_key"] = provider.get("api_key")

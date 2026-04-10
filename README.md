@@ -97,6 +97,22 @@ curl http://localhost:8080/healthz
 # {"status": "ok"}
 ```
 
+### 数据库初始化（空库 / 新环境）
+
+如果是首次创建数据库，不要再只执行 legacy 的 `sql/init_model_gateway.sql`。  
+当前 schema 的一键 bootstrap 入口是：
+
+```bash
+psql -h <pg-host> -U <pg-admin-user> -d postgres \
+  -v mgw_db_password='CHANGE_ME_STRONG_PASSWORD' \
+  -f sql/bootstrap_model_gateway.sql
+```
+
+该脚本会一次性创建：
+- legacy 审计表：`route_rules`、`call_logs`、`daily_usage_agg`
+- current schema：`providers`、`models`、`route_rules_v2`、`health_checks`
+- 当前默认 providers / models / routes（含 `openai_api` 占位 provider）
+
 ### 访问地址
 
 - API: http://localhost:8080
@@ -132,6 +148,7 @@ docker compose up -d --build
 
 ```bash
 curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer ${GATEWAY_CLIENT_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "qwen3-max",
@@ -170,6 +187,10 @@ OPENAI_API_KEY=your-gateway-token
 # model 参数使用 gateway 中配置的 model_key
 ```
 
+其中：
+- `OPENAI_API_KEY` / SDK `api_key` 对应 **`GATEWAY_CLIENT_TOKEN`**
+- 管理接口（`/api/*`、`/admin/*`）必须使用 **`GATEWAY_ADMIN_TOKEN`**
+
 ## 支持的模型
 
 ### API 类型
@@ -204,6 +225,7 @@ OPENAI_API_KEY=your-gateway-token
 | `GATEWAY_UI_PORT` | 管理界面端口 | 8620 |
 | `GATEWAY_CLIENT_TOKEN` | 客户端 Token | - |
 | `GATEWAY_ADMIN_TOKEN` | 管理端 Token | - |
+| `VITE_GATEWAY_ADMIN_TOKEN` | 前端构建期注入的管理端 Token（可选） | - |
 | `PG_HOST` | PostgreSQL 主机 | localhost |
 | `PG_PORT` | PostgreSQL 端口 | 5432 |
 | `PG_USER` | PostgreSQL 用户 | postgres |
@@ -233,14 +255,18 @@ DEEPSEEK_MODEL_NAME=deepseek-chat
 
 ### 动态发现模型
 
-项目可通过 API 查询 gateway 中可用的模型，无需硬编码：
+项目可通过 **client-safe** 的 `/v1/models` 查询 gateway 中可用模型，无需硬编码管理接口。
+`/api/models` 仍保留给管理端 CRUD 使用：
 
 ```python
 import requests
 
 # 获取可用模型列表
-response = requests.get("http://model-gateway:8080/api/models")
-models = [m["model_key"] for m in response.json()["items"]]
+response = requests.get(
+    "http://model-gateway:8080/v1/models",
+    headers={"Authorization": "Bearer YOUR_GATEWAY_CLIENT_TOKEN"},
+)
+models = [m["id"] for m in response.json()["data"]]
 # ["qwen3-max", "kimi-k2.5", "deepseek-chat", ...]
 ```
 
@@ -255,6 +281,7 @@ models = [m["model_key"] for m in response.json()["items"]]
 | 接口 | 说明 |
 |------|------|
 | `POST /v1/chat/completions` | 聊天补全（支持流式） |
+| `GET /v1/models` | 客户端可见模型列表（需 client token） |
 | `GET /healthz` | 健康检查 |
 
 ### 管理接口
@@ -268,6 +295,11 @@ models = [m["model_key"] for m in response.json()["items"]]
 | `POST /api/health/check/model/{id}` | Model 测试调用 |
 | `GET /admin/calls` | 调用记录 |
 | `GET /admin/usage/summary` | 使用统计 |
+
+> 所有管理接口都要求 `Authorization: Bearer ${GATEWAY_ADMIN_TOKEN}`。  
+> 前端管理台会在首次 401 时提示输入 admin token，也可在构建时注入 `VITE_GATEWAY_ADMIN_TOKEN`。
+>
+> 路由 fallback 说明：legacy 结构中的 `fallback_provider` 已废弃，当前运行时只使用 `primary_provider`。
 
 ## 本地开发
 

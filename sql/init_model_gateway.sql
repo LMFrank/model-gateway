@@ -1,5 +1,10 @@
 -- 在 PostgreSQL 14+ 实例中通过 psql 执行：
 -- psql -h <pg-host> -U <pg-admin-user> -d postgres -v mgw_db_password='CHANGE_ME_STRONG_PASSWORD' -f sql/init_model_gateway.sql
+--
+-- 注意：
+-- 本脚本保留为 legacy 初始化入口，只覆盖旧版 route_rules / provider_configs 基线。
+-- 新环境请优先使用 `sql/bootstrap_model_gateway.sql`，它会一次性创建当前运行时依赖的
+-- providers / models / route_rules_v2 / health_checks 等完整 schema。
 
 \set ON_ERROR_STOP on
 

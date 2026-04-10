@@ -25,7 +25,8 @@ DELETE FROM providers WHERE name IN ('kimi_api', 'qwen_api');
 INSERT INTO providers (name, display_name, provider_type, base_url, api_key, is_enabled, description) VALUES
 ('bailian_coding_api', '百炼 Coding Plan', 'api', 'https://coding.dashscope.aliyuncs.com/v1', '', true, '阿里云百炼 Coding Plan API，按订阅计费（需手动配置 API Key）'),
 ('bailian_api', '百炼通用 API', 'api', 'https://dashscope.aliyuncs.com/compatible-mode/v1', '', true, '阿里云百炼标准 API，按 Token 计费（需手动配置 API Key）'),
-('deepseek_api', 'DeepSeek 官方', 'api', 'https://api.deepseek.com/v1', '', true, 'DeepSeek 官方 API（需手动配置 API Key）');
+('deepseek_api', 'DeepSeek 官方', 'api', 'https://api.deepseek.com/v1', '', true, 'DeepSeek 官方 API（需手动配置 API Key）'),
+('openai_api', 'OpenAI / sub2api', 'api', 'https://api.openai.com/v1', '', false, 'OpenAI 或 sub2api 代理入口；默认仅创建占位 provider，需手动补齐 base_url 与 API Key 后启用');
 
 -- ============================================================================
 -- 3. 新增 Models
