@@ -118,6 +118,27 @@ psql -h <pg-host> -U <pg-admin-user> -d postgres \
 - API: http://localhost:8080
 - 管理界面: http://localhost:8620
 
+### 升级已有环境
+
+当现网仍使用旧核心路由表名时，先执行数据库迁移，再重建服务：
+
+```bash
+docker exec -i pg \
+  env PGPASSWORD="$PG_PASSWORD" \
+  psql -U "$PG_USER" -d "$PG_DATABASE" \
+  < sql/migrations/v0.3.2_rename_route_rules_table.sql
+
+docker compose up -d --build model-gateway frontend
+```
+
+升级完成后建议检查：
+
+```bash
+curl http://localhost:8080/healthz
+curl -H "Authorization: Bearer $GATEWAY_CLIENT_TOKEN" http://localhost:8080/v1/models
+curl -H "Authorization: Bearer $GATEWAY_ADMIN_TOKEN" http://localhost:8080/api/providers
+```
+
 ### 可观测接入
 
 项目已按监控系统约定接入：

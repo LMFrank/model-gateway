@@ -46,3 +46,17 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Files: changes.log, app/main.py, app/repository.py, app/schemas.py, README.md, docs/integration.md, sql/init_model_gateway.sql, sql/bootstrap_model_gateway.sql, sql/migrations/v0.1.0_schema_refactor.sql, sql/migrations/v0.3.0_add_providers_models.sql, sql/migrations/v0.3.1_sync_qwen_coding_plan_models.sql, sql/migrations/v0.3.2_rename_route_rules_table.sql, tests/test_auth_and_provider_security.py, docker-compose.yml, .env.example
 - Verify: `pytest -q`=20 passed；`cd frontend && npm run lint`=0；`cd frontend && npm run type-check`=0；`cd frontend && npm run build`=0；全仓版本化后缀检索无命中；全仓个人化/私有化/旧监控前缀检索无命中（已排除运行时依赖目录）
 - Next: None
+
+## [2026-04-13 18:00:00 +0800] [Codex] [task-production-migration-and-validation] [START]
+- Intent: 补齐生产迁移执行说明，并确认生产环境在本轮命名清理后仍可正常运行
+- Scope: 检查仓库当前状态、部署脚本、环境配置与可访问的生产入口；在具备连接条件时执行迁移与健康验证；必要时补充最小文档/脚本
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 盘点 .env / scripts / docker-compose / SQL migration 与可访问的生产端点或数据库连接信息
+
+## [2026-04-13 18:28:00 +0800] [Codex] [task-production-migration-and-validation] [DONE]
+- Intent: 补齐生产迁移执行说明，并确认生产环境在本轮命名清理后仍可正常运行
+- Scope: 已在运行中的生产 PostgreSQL 执行 `v0.3.2` 表重命名迁移；补充 README 升级命令；更新本地生产 `.env` 的 observability / codex 路径配置并无构建重建容器；未改动对外 API 路径
+- Files: changes.log, README.md
+- Verify: `docker exec -i pg ... < sql/migrations/v0.3.2_rename_route_rules_table.sql` 成功；DB 复核仅剩 `model_routes` 且计数=14；`docker compose up -d --no-build --force-recreate model-gateway frontend` 成功；`curl http://localhost:8080/healthz`=200；`curl -H "Authorization: Bearer ...client..." /v1/models`=200；`curl -H "Authorization: Bearer ...admin..." /api/providers`=200；`curl -I http://localhost:8620`=200；容器 labels/env 已带 `monitor.*` 与 `OBSERVABILITY_*` 兼容配置
+- Next: None
