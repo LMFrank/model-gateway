@@ -14,7 +14,7 @@
 
 ### 痛点
 
-假设你有多个 AI Agent 项目（如 StockAgents、ContextOS、TradingAgent），每个项目都需要使用 LLM：
+假设你有多个 AI Agent 应用或服务，它们都需要使用 LLM：
 
 | 问题 | 痛点描述 |
 |------|----------|
@@ -234,7 +234,7 @@ OPENAI_API_KEY=your-gateway-token
 
 ### 多项目接入
 
-StockAgents / ContextOS 等多模型项目：
+适用于需要同时接入多种模型服务的项目：
 
 ```bash
 # Kimi Code 服务

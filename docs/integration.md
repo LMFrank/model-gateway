@@ -44,7 +44,7 @@ OPENAI_BASE_URL=http://model-gateway:8080/v1
 OPENAI_MODEL_NAME=qwen3-max
 ```
 
-#### 多模型服务（StockAgents / ContextOS 模式）
+#### 多模型服务（多服务接入模式）
 
 应用按服务名配置多个模型，运行时动态切换：
 

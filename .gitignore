@@ -25,8 +25,7 @@ logs/
 runtime/
 *.log
 !changes.log
-!changes/archive/
-!changes/archive/*.log
+changes/
 *.pid
 
 # Local backup files
@@ -39,3 +38,4 @@ runtime/
 .idea/
 .vscode/
 .omx/
+.trae/
