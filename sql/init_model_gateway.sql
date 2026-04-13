@@ -4,7 +4,7 @@
 -- 注意：
 -- 本脚本保留为兼容初始化入口，只覆盖 route_rules / provider_configs 基线。
 -- 新环境请优先使用 `sql/bootstrap_model_gateway.sql`，它会一次性创建完整运行时依赖的
--- providers / models / route_rules_v2 / health_checks 等完整 schema。
+-- providers / models / model_routes / health_checks 等完整 schema。
 
 \set ON_ERROR_STOP on
 

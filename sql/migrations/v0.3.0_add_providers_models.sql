@@ -8,8 +8,8 @@
 -- 1. 清理旧数据
 -- ============================================================================
 
--- 删除旧的路由规则 (route_rules_v2 有外键约束，需要先删除)
-DELETE FROM route_rules_v2 WHERE model_key IN ('qwen3.5-plus');
+-- 删除旧的路由规则 (model_routes 有外键约束，需要先删除)
+DELETE FROM model_routes WHERE model_key IN ('qwen3.5-plus');
 DELETE FROM route_rules WHERE model_name IN ('qwen3.5-plus');
 
 -- 删除旧的 models（关联到要删除的 providers）
@@ -26,7 +26,7 @@ INSERT INTO providers (name, display_name, provider_type, base_url, api_key, is_
 ('bailian_coding_api', '百炼 Coding Plan', 'api', 'https://coding.dashscope.aliyuncs.com/v1', '', true, '阿里云百炼 Coding Plan API，按订阅计费（需手动配置 API Key）'),
 ('bailian_api', '百炼通用 API', 'api', 'https://dashscope.aliyuncs.com/compatible-mode/v1', '', true, '阿里云百炼标准 API，按 Token 计费（需手动配置 API Key）'),
 ('deepseek_api', 'DeepSeek 官方', 'api', 'https://api.deepseek.com/v1', '', true, 'DeepSeek 官方 API（需手动配置 API Key）'),
-('openai_api', 'OpenAI / sub2api', 'api', 'https://api.openai.com/v1', '', false, 'OpenAI 或 sub2api 代理入口；默认仅创建占位 provider，需手动补齐 base_url 与 API Key 后启用');
+('openai_api', 'OpenAI / Compatible Proxy', 'api', 'https://api.openai.com/v1', '', false, 'OpenAI 或 OpenAI 兼容代理入口；默认仅创建占位 provider，需手动补齐 base_url 与 API Key 后启用');
 
 -- ============================================================================
 -- 3. 新增 Models
@@ -51,15 +51,15 @@ INSERT INTO models (provider_id, model_key, display_name, upstream_model, is_act
 INSERT INTO models (provider_id, model_key, display_name, upstream_model, is_active, description) VALUES
 ((SELECT id FROM providers WHERE name = 'deepseek_api'), 'deepseek-chat', 'DeepSeek Chat', 'deepseek-chat', true, 'DeepSeek Chat - 官方 API');
 
--- 3.4 OpenAI API (sub2api) Models
+-- 3.4 OpenAI API Compatible Proxy Models
 INSERT INTO models (provider_id, model_key, display_name, upstream_model, is_active, description) VALUES
-((SELECT id FROM providers WHERE name = 'openai_api'), 'gpt-5.3-codex', 'GPT-5.3 Codex', 'gpt-5.3-codex', true, 'GPT-5.3 Codex - sub2api 代理');
+((SELECT id FROM providers WHERE name = 'openai_api'), 'gpt-5.3-codex', 'GPT-5.3 Codex', 'gpt-5.3-codex', true, 'GPT-5.3 Codex - OpenAI 兼容代理');
 
 -- ============================================================================
 -- 4. 新增 Route Rules
 -- ============================================================================
 
-INSERT INTO route_rules_v2 (model_key, is_enabled, priority, description) VALUES
+INSERT INTO model_routes (model_key, is_enabled, priority, description) VALUES
 -- CLI providers
 ('kimi-for-coding', true, 0, 'Kimi CLI 调用'),
 ('codex-for-coding', true, 0, 'Codex CLI 调用'),
@@ -76,8 +76,8 @@ INSERT INTO route_rules_v2 (model_key, is_enabled, priority, description) VALUES
 ('deepseek-v3.2', true, 0, 'DeepSeek V3.2 - 百炼托管'),
 -- DeepSeek 官方
 ('deepseek-chat', true, 0, 'DeepSeek Chat - 官方 API'),
--- OpenAI API (sub2api)
-('gpt-5.3-codex', true, 0, 'GPT-5.3 Codex - sub2api 代理')
+-- OpenAI API Compatible Proxy
+('gpt-5.3-codex', true, 0, 'GPT-5.3 Codex - OpenAI 兼容代理')
 ON CONFLICT (model_key) DO UPDATE SET
   is_enabled = EXCLUDED.is_enabled,
   description = EXCLUDED.description,
@@ -101,8 +101,8 @@ INSERT INTO route_rules (model_name, primary_provider, fallback_provider, is_ena
 ('deepseek-v3.2', 'bailian_api', NULL, true, 'DeepSeek V3.2 - 百炼托管'),
 -- DeepSeek 官方
 ('deepseek-chat', 'deepseek_api', NULL, true, 'DeepSeek Chat - 官方 API'),
--- OpenAI API (sub2api)
-('gpt-5.3-codex', 'openai_api', NULL, true, 'GPT-5.3 Codex - sub2api 代理')
+-- OpenAI API Compatible Proxy
+('gpt-5.3-codex', 'openai_api', NULL, true, 'GPT-5.3 Codex - OpenAI 兼容代理')
 ON CONFLICT (model_name) DO UPDATE SET
   primary_provider = EXCLUDED.primary_provider,
   is_enabled = EXCLUDED.is_enabled,

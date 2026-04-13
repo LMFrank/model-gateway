@@ -26,8 +26,8 @@ from app.schemas import (
     ProvidersListResponse,
     ProviderConfigsUpsertRequest,
     RouteRulesUpsertRequest,
-    RouteRulesV2ListResponse,
-    RouteRulesV2UpsertRequest,
+    ModelRoutesListResponse,
+    ModelRoutesUpsertRequest,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -170,7 +170,7 @@ def create_app() -> FastAPI:
 
     @app.get("/v1/models", dependencies=[Depends(require_client_auth)])
     async def list_client_models() -> dict[str, Any]:
-        items = await run_in_threadpool(repository.list_route_rules_v2)
+        items = await run_in_threadpool(repository.list_model_routes)
         active_items = [
             item
             for item in items
@@ -217,19 +217,19 @@ def create_app() -> FastAPI:
 
     # Provider CRUD
     @app.get("/api/providers", dependencies=[Depends(require_admin_auth)])
-    async def list_providers_v2() -> ProvidersListResponse:
+    async def list_providers_api() -> ProvidersListResponse:
         items = await run_in_threadpool(repository.list_providers)
         return ProvidersListResponse(items=items)
 
     @app.get("/api/providers/{provider_id}", dependencies=[Depends(require_admin_auth)])
-    async def get_provider_v2(provider_id: int) -> dict[str, Any]:
+    async def get_provider_api(provider_id: int) -> dict[str, Any]:
         item = await run_in_threadpool(repository.get_provider, provider_id)
         if not item:
             raise HTTPException(status_code=404, detail="provider not found")
         return item
 
     @app.post("/api/providers", dependencies=[Depends(require_admin_auth)])
-    async def create_provider_v2(body: ProviderCreate) -> dict[str, Any]:
+    async def create_provider_api(body: ProviderCreate) -> dict[str, Any]:
         provider_id = await run_in_threadpool(
             repository.create_provider, body.model_dump()
         )
@@ -237,7 +237,7 @@ def create_app() -> FastAPI:
         return {"id": provider_id, "item": item}
 
     @app.put("/api/providers/{provider_id}", dependencies=[Depends(require_admin_auth)])
-    async def update_provider_v2(
+    async def update_provider_api(
         provider_id: int, body: ProviderUpdate
     ) -> dict[str, Any]:
         success = await run_in_threadpool(
@@ -251,7 +251,7 @@ def create_app() -> FastAPI:
     @app.delete(
         "/api/providers/{provider_id}", dependencies=[Depends(require_admin_auth)]
     )
-    async def delete_provider_v2(provider_id: int) -> dict[str, str]:
+    async def delete_provider_api(provider_id: int) -> dict[str, str]:
         success = await run_in_threadpool(repository.delete_provider, provider_id)
         if not success:
             raise HTTPException(status_code=404, detail="provider not found")
@@ -259,21 +259,21 @@ def create_app() -> FastAPI:
 
     # Model CRUD
     @app.get("/api/models", dependencies=[Depends(require_admin_auth)])
-    async def list_models_v2(
+    async def list_models_api(
         provider_id: int | None = Query(default=None),
     ) -> ModelsListResponse:
         items = await run_in_threadpool(repository.list_models, provider_id)
         return ModelsListResponse(items=items)
 
     @app.get("/api/models/{model_id}", dependencies=[Depends(require_admin_auth)])
-    async def get_model_v2(model_id: int) -> dict[str, Any]:
+    async def get_model_api(model_id: int) -> dict[str, Any]:
         item = await run_in_threadpool(repository.get_model, model_id)
         if not item:
             raise HTTPException(status_code=404, detail="model not found")
         return item
 
     @app.post("/api/models", dependencies=[Depends(require_admin_auth)])
-    async def create_model_v2(body: ModelCreate) -> dict[str, Any]:
+    async def create_model_api(body: ModelCreate) -> dict[str, Any]:
         # Validate provider exists
         provider = await run_in_threadpool(repository.get_provider, body.provider_id)
         if not provider:
@@ -284,7 +284,7 @@ def create_app() -> FastAPI:
         return {"id": model_id, "item": item}
 
     @app.put("/api/models/{model_id}", dependencies=[Depends(require_admin_auth)])
-    async def update_model_v2(model_id: int, body: ModelUpdate) -> dict[str, Any]:
+    async def update_model_api(model_id: int, body: ModelUpdate) -> dict[str, Any]:
         # Validate provider if provided
         if body.provider_id:
             provider = await run_in_threadpool(
@@ -302,7 +302,7 @@ def create_app() -> FastAPI:
         return {"item": item}
 
     @app.delete("/api/models/{model_id}", dependencies=[Depends(require_admin_auth)])
-    async def delete_model_v2(model_id: int) -> dict[str, str]:
+    async def delete_model_api(model_id: int) -> dict[str, str]:
         success = await run_in_threadpool(repository.delete_model, model_id)
         if not success:
             raise HTTPException(status_code=404, detail="model not found")
@@ -310,25 +310,25 @@ def create_app() -> FastAPI:
 
     # Route Rules
     @app.get("/api/routes", dependencies=[Depends(require_admin_auth)])
-    async def list_routes_v2() -> RouteRulesV2ListResponse:
-        items = await run_in_threadpool(repository.list_route_rules_v2)
-        return RouteRulesV2ListResponse(items=items)
+    async def list_routes_api() -> ModelRoutesListResponse:
+        items = await run_in_threadpool(repository.list_model_routes)
+        return ModelRoutesListResponse(items=items)
 
     @app.post("/api/routes", dependencies=[Depends(require_admin_auth)])
-    async def upsert_routes_v2(
-        body: RouteRulesV2UpsertRequest,
-    ) -> RouteRulesV2ListResponse:
+    async def upsert_routes_api(
+        body: ModelRoutesUpsertRequest,
+    ) -> ModelRoutesListResponse:
         if not body.rules:
             raise HTTPException(status_code=400, detail="rules cannot be empty")
         await run_in_threadpool(
-            repository.upsert_route_rules_v2, [item.model_dump() for item in body.rules]
+            repository.upsert_model_routes, [item.model_dump() for item in body.rules]
         )
-        items = await run_in_threadpool(repository.list_route_rules_v2)
-        return RouteRulesV2ListResponse(items=items)
+        items = await run_in_threadpool(repository.list_model_routes)
+        return ModelRoutesListResponse(items=items)
 
     @app.delete("/api/routes/{model_key}", dependencies=[Depends(require_admin_auth)])
-    async def delete_route_v2(model_key: str) -> dict[str, str]:
-        success = await run_in_threadpool(repository.delete_route_rule_v2, model_key)
+    async def delete_route_api(model_key: str) -> dict[str, str]:
+        success = await run_in_threadpool(repository.delete_model_route, model_key)
         if not success:
             raise HTTPException(status_code=404, detail="route not found")
         return {"message": "route deleted"}

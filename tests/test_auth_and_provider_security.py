@@ -126,7 +126,7 @@ def test_client_endpoint_accepts_client_token() -> None:
 
 def test_client_models_endpoint_requires_client_token() -> None:
     app = _build_app()
-    app.state.repository.list_route_rules_v2 = lambda: []
+    app.state.repository.list_model_routes = lambda: []
     client = TestClient(app)
 
     response = client.get("/v1/models")
@@ -136,7 +136,7 @@ def test_client_models_endpoint_requires_client_token() -> None:
 
 def test_client_models_endpoint_lists_only_active_models() -> None:
     app = _build_app()
-    app.state.repository.list_route_rules_v2 = lambda: [
+    app.state.repository.list_model_routes = lambda: [
         {
             "model_key": "qwen3-max",
             "is_enabled": True,

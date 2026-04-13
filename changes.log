@@ -32,3 +32,17 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Files: changes.log, frontend/package.json, frontend/package-lock.json, frontend/eslint.config.mjs, frontend/env.d.ts
 - Verify: `bash scripts/archive_changes_log.sh public-cleanup-2026-04-13` 成功；`cd frontend && npm run lint`=0；`cd frontend && npm run type-check`=0；`cd frontend && npm run build`=0；`pytest -q`=20 passed；frontend 锁文件告警字段检索无命中；仓内目标措辞检索无命中（已排除 `changes.log` 与 `frontend/package-lock.json`）
 - Next: None
+
+## [2026-04-13 17:18:00 +0800] [Codex] [task-neutralize-versioned-names-and-public-traces] [START]
+- Intent: 继续收口代码中的版本化后缀命名，并全仓清理剩余个人化、品牌化或内网痕迹
+- Scope: 先扫描内部命名与公开痕迹；优先重命名内部函数/类型/注释等非契约符号；对核心路由表改名时同步补迁移脚本并保持对外 API 路径稳定
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 检索版本化后缀、个人邮箱/名字、内网痕迹与项目私有标识，并确定可安全重命名的范围
+
+## [2026-04-13 17:42:00 +0800] [Codex] [task-neutralize-versioned-names-and-public-traces] [DONE]
+- Intent: 继续收口代码中的版本化后缀命名，并全仓清理剩余个人化、品牌化或内网痕迹
+- Scope: 已将核心路由表与内部类型/方法改为中性命名 `model_routes` / `ModelRoutes*`；补充表重命名迁移；清理 README、.env.example、docker-compose 与 SQL 中的个人化、私有仓库、监控前缀与兼容代理痕迹；未改动对外 API 路径
+- Files: changes.log, app/main.py, app/repository.py, app/schemas.py, README.md, docs/integration.md, sql/init_model_gateway.sql, sql/bootstrap_model_gateway.sql, sql/migrations/v0.1.0_schema_refactor.sql, sql/migrations/v0.3.0_add_providers_models.sql, sql/migrations/v0.3.1_sync_qwen_coding_plan_models.sql, sql/migrations/v0.3.2_rename_route_rules_table.sql, tests/test_auth_and_provider_security.py, docker-compose.yml, .env.example
+- Verify: `pytest -q`=20 passed；`cd frontend && npm run lint`=0；`cd frontend && npm run type-check`=0；`cd frontend && npm run build`=0；全仓版本化后缀检索无命中；全仓个人化/私有化/旧监控前缀检索无命中（已排除运行时依赖目录）
+- Next: None

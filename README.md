@@ -8,7 +8,7 @@
 
 **当前版本**: `v0.1.6`（2026-04-10）
 
-> ⚠️ **声明**: 本项目仅供个人学习研究使用。使用时请遵守各模型官方的服务条款和使用规则。
+> ⚠️ **使用提醒**: 使用本项目时请遵守各模型官方的服务条款和使用规则。
 
 ## 为什么需要 Model Gateway？
 
@@ -83,7 +83,7 @@ After: 统一接入 Model Gateway
 
 ```bash
 # 克隆项目
-git clone https://github.com/LMFrank/model-gateway.git
+git clone <your-repo-url>
 cd model-gateway
 
 # 配置环境变量
@@ -110,7 +110,7 @@ psql -h <pg-host> -U <pg-admin-user> -d postgres \
 
 该脚本会一次性创建：
 - 兼容/审计表：`route_rules`、`call_logs`、`daily_usage_agg`
-- 核心表：`providers`、`models`、`route_rules_v2`、`health_checks`
+- 核心表：`providers`、`models`、`model_routes`、`health_checks`
 - 当前默认 providers / models / routes（含 `openai_api` 占位 provider）
 
 ### 访问地址
@@ -120,23 +120,23 @@ psql -h <pg-host> -U <pg-admin-user> -d postgres \
 
 ### 可观测接入
 
-项目已按 monitor 中台约定接入：
+项目已按监控系统约定接入：
 
 - `model-gateway` API 服务
-  - `monitor.service=model-gateway-api`
+  - `service=model-gateway-api`
   - 暴露 `/metrics`
 - `model-gateway-ui` 前端服务
-  - `monitor.service=model-gateway-ui`
+  - `service=model-gateway-ui`
   - 默认仅采集日志，不暴露 Prometheus metrics
 
 接入方式：
 
 ```bash
-cd /Users/xushuchi/Library/CloudStorage/OneDrive-个人/Code/stock/model-gateway
+cd model-gateway
 docker compose up -d --build
 ```
 
-接入后可在 monitor 中查看：
+接入后可在监控系统中查看：
 
 - Grafana: `http://localhost:3000`
 - Prometheus targets 中的 `model-gateway-api`
@@ -369,11 +369,11 @@ API Key 存储在数据库，建议：
 - `v0.1.6` (2026-04-10): 补齐 admin/client Bearer 鉴权；新增 client-safe `/v1/models`；provider secret 默认脱敏；新增 `sql/bootstrap_model_gateway.sql` 并完成空库 bootstrap smoke 验证；移除 runtime fallback 语义
 - `v0.1.5` (2026-04-08): 同步百炼 Coding Plan 的 Qwen 模型配置（新增 `qwen3-coder-plus`）；新增幂等迁移脚本 `v0.3.1`；完成生产环境迁移与接口实测验证
 - `v0.1.4` (2026-04-08): 完成健康检查交互优化（显示进行中与状态中文化）；补齐前端 ESLint 配置；补齐本地测试依赖并完成生产链路验证
-- `v0.1.3` (2026-04-02): 接入 monitor 中台；新增 `/metrics` 暴露；补齐 monitor labels 与共享网络接入；统一 observability 展示口径
+- `v0.1.3` (2026-04-02): 接入监控系统；新增 `/metrics` 暴露；补齐指标 labels 与共享网络接入；统一 observability 展示口径
 - `v0.1.2` (2026-04-02): 完成前端管理台重构；统一 design-tokens 与共享状态管理；优化前端构建分包并完成生产重建
 - `v0.1.1` (2026-04-01): 修复模型测试与健康状态刷新；新增 CLI Provider 健康探针；修正 MiniMax 上游模型名；补齐 `/v1` 前端代理
 - `v0.1.0` (2026-03-31): Vue 3 管理界面、健康检查、扩展 providers/models
-- `v0.0.5` (2026-03-28): 统一 codex_cli + sub2api 方案
+- `v0.0.5` (2026-03-28): 统一 codex_cli + OpenAI 兼容代理方案
 - `v0.0.4` (2026-03-28): 新增 codex_cli provider
 - `v0.0.3` (2026-03-28): 修复 kimi_cli 长 prompt
 - `v0.0.2` (2026-03-27): 切换 PostgreSQL

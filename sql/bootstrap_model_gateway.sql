@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS models (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS route_rules_v2 (
+CREATE TABLE IF NOT EXISTS model_routes (
   model_key VARCHAR(128) PRIMARY KEY REFERENCES models(model_key),
   is_enabled BOOLEAN DEFAULT TRUE,
   priority INTEGER DEFAULT 0,
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS health_checks (
 CREATE INDEX IF NOT EXISTS idx_models_provider_id ON models (provider_id);
 CREATE INDEX IF NOT EXISTS idx_models_health_status ON models (health_status);
 CREATE INDEX IF NOT EXISTS idx_models_is_active ON models (is_active);
-CREATE INDEX IF NOT EXISTS idx_route_rules_v2_enabled ON route_rules_v2 (is_enabled);
+CREATE INDEX IF NOT EXISTS idx_model_routes_enabled ON model_routes (is_enabled);
 CREATE INDEX IF NOT EXISTS idx_health_checks_target ON health_checks (check_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_health_checks_checked_at ON health_checks (checked_at DESC);
 CREATE INDEX IF NOT EXISTS idx_health_checks_status ON health_checks (status);
@@ -168,9 +168,9 @@ BEGIN
       EXECUTE FUNCTION update_updated_at_column();
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_route_rules_v2_updated_at') THEN
-    CREATE TRIGGER update_route_rules_v2_updated_at
-      BEFORE UPDATE ON route_rules_v2
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_model_routes_updated_at') THEN
+    CREATE TRIGGER update_model_routes_updated_at
+      BEFORE UPDATE ON model_routes
       FOR EACH ROW
       EXECUTE FUNCTION update_updated_at_column();
   END IF;
@@ -277,8 +277,8 @@ VALUES
     'DeepSeek 官方 API，需手动配置 API Key',
     FALSE
   ),
-  ('openai_api', 'OpenAI / sub2api', 'api', 'https://api.openai.com/v1', '', '{}'::jsonb,
-    'OpenAI 或 sub2api 代理入口；bootstrap 默认创建占位 provider，需手动补齐 base_url 与 API Key 后启用',
+  ('openai_api', 'OpenAI / Compatible Proxy', 'api', 'https://api.openai.com/v1', '', '{}'::jsonb,
+    'OpenAI 或 OpenAI 兼容代理入口；bootstrap 默认创建占位 provider，需手动补齐 base_url 与 API Key 后启用',
     FALSE
   )
 ON CONFLICT (name) DO UPDATE SET
@@ -308,7 +308,7 @@ VALUES
   ((SELECT id FROM providers WHERE name = 'bailian_api'), 'qwen3-max-general', 'Qwen3 Max 通用', 'qwen3-max', TRUE, 'Qwen3 Max - 百炼标准 API'),
   ((SELECT id FROM providers WHERE name = 'bailian_api'), 'deepseek-v3.2', 'DeepSeek V3.2', 'deepseek-v3.2', TRUE, 'DeepSeek V3.2 - 百炼托管'),
   ((SELECT id FROM providers WHERE name = 'deepseek_api'), 'deepseek-chat', 'DeepSeek Chat', 'deepseek-chat', TRUE, 'DeepSeek Chat - 官方 API'),
-  ((SELECT id FROM providers WHERE name = 'openai_api'), 'gpt-5.3-codex', 'GPT-5.3 Codex', 'gpt-5.3-codex', TRUE, 'GPT-5.3 Codex - sub2api 代理')
+  ((SELECT id FROM providers WHERE name = 'openai_api'), 'gpt-5.3-codex', 'GPT-5.3 Codex', 'gpt-5.3-codex', TRUE, 'GPT-5.3 Codex - OpenAI 兼容代理')
 ON CONFLICT (model_key) DO UPDATE SET
   display_name = EXCLUDED.display_name,
   upstream_model = EXCLUDED.upstream_model,
@@ -320,7 +320,7 @@ ON CONFLICT (model_key) DO UPDATE SET
 -- Seed route rules（核心表 + 兼容表）
 -- ============================================================================
 
-INSERT INTO route_rules_v2 (model_key, is_enabled, priority, description)
+INSERT INTO model_routes (model_key, is_enabled, priority, description)
 VALUES
   ('kimi-for-coding', TRUE, 0, 'Kimi CLI 调用'),
   ('codex-for-coding', TRUE, 0, 'Codex CLI 调用'),
@@ -335,7 +335,7 @@ VALUES
   ('qwen3-max-general', TRUE, 0, 'Qwen3 Max - 百炼标准 API'),
   ('deepseek-v3.2', TRUE, 0, 'DeepSeek V3.2 - 百炼托管'),
   ('deepseek-chat', TRUE, 0, 'DeepSeek Chat - 官方 API'),
-  ('gpt-5.3-codex', TRUE, 0, 'GPT-5.3 Codex - sub2api 代理')
+  ('gpt-5.3-codex', TRUE, 0, 'GPT-5.3 Codex - OpenAI 兼容代理')
 ON CONFLICT (model_key) DO UPDATE SET
   is_enabled = EXCLUDED.is_enabled,
   priority = EXCLUDED.priority,
@@ -357,7 +357,7 @@ VALUES
   ('qwen3-max-general', 'bailian_api', NULL, TRUE, 'Qwen3 Max - 百炼标准 API'),
   ('deepseek-v3.2', 'bailian_api', NULL, TRUE, 'DeepSeek V3.2 - 百炼托管'),
   ('deepseek-chat', 'deepseek_api', NULL, TRUE, 'DeepSeek Chat - 官方 API'),
-  ('gpt-5.3-codex', 'openai_api', NULL, TRUE, 'GPT-5.3 Codex - sub2api 代理')
+  ('gpt-5.3-codex', 'openai_api', NULL, TRUE, 'GPT-5.3 Codex - OpenAI 兼容代理')
 ON CONFLICT (model_name) DO UPDATE SET
   primary_provider = EXCLUDED.primary_provider,
   fallback_provider = EXCLUDED.fallback_provider,

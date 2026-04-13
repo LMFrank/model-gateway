@@ -110,15 +110,15 @@ class ModelsListResponse(BaseModel):
 # ==========================================================================
 
 
-class RouteRuleV2Upsert(BaseModel):
+class ModelRouteUpsert(BaseModel):
     model_key: str = Field(min_length=1, max_length=128)
     is_enabled: bool = True
     priority: int = Field(default=0, ge=0)
     description: str | None = Field(default=None, max_length=255)
 
 
-class RouteRulesV2UpsertRequest(BaseModel):
-    rules: list[RouteRuleV2Upsert]
+class ModelRoutesUpsertRequest(BaseModel):
+    rules: list[ModelRouteUpsert]
 
 
 class ModelInfo(BaseModel):
@@ -134,7 +134,7 @@ class RouteProviderInfo(BaseModel):
     provider_type: str
 
 
-class RouteRuleV2Out(BaseModel):
+class ModelRouteOut(BaseModel):
     model_key: str
     is_enabled: bool
     priority: int
@@ -145,7 +145,7 @@ class RouteRuleV2Out(BaseModel):
     provider: RouteProviderInfo | None = None
 
 
-class RouteRulesV2ListResponse(BaseModel):
+class ModelRoutesListResponse(BaseModel):
     items: list[dict[str, Any]]
 
 

@@ -144,7 +144,7 @@ class PostgresRepository:
         required_tables = (
             "providers",
             "models",
-            "route_rules_v2",
+            "model_routes",
             "health_checks",
             "route_rules",
             "call_logs",
@@ -468,7 +468,7 @@ class PostgresRepository:
     # Route Rules
     # ==========================================================================
 
-    def get_route_rule_v2(self, model_key: str) -> dict[str, Any] | None:
+    def get_model_route(self, model_key: str) -> dict[str, Any] | None:
         """根据 model_key 获取路由规则"""
         sql = """
         SELECT r.model_key, r.is_enabled, r.priority, r.description, 
@@ -476,7 +476,7 @@ class PostgresRepository:
                m.id as model_id, m.display_name as model_display_name, 
                m.upstream_model, m.is_active as model_is_active,
                p.id as provider_id, p.name as provider_name, p.provider_type
-        FROM route_rules_v2 r
+        FROM model_routes r
         JOIN models m ON r.model_key = m.model_key
         JOIN providers p ON m.provider_id = p.id
         WHERE r.model_key = %s
@@ -488,9 +488,9 @@ class PostgresRepository:
                 row = cursor.fetchone()
         if not row:
             return None
-        return self._route_v2_row_to_dict(row)
+        return self._model_route_row_to_dict(row)
 
-    def list_route_rules_v2(self) -> list[dict[str, Any]]:
+    def list_model_routes(self) -> list[dict[str, Any]]:
         """列出所有路由规则"""
         sql = """
         SELECT r.model_key, r.is_enabled, r.priority, r.description, 
@@ -498,7 +498,7 @@ class PostgresRepository:
                m.id as model_id, m.display_name as model_display_name, 
                m.upstream_model, m.is_active as model_is_active,
                p.id as provider_id, p.name as provider_name, p.provider_type
-        FROM route_rules_v2 r
+        FROM model_routes r
         JOIN models m ON r.model_key = m.model_key
         JOIN providers p ON m.provider_id = p.id
         ORDER BY r.priority DESC, r.model_key ASC
@@ -507,15 +507,15 @@ class PostgresRepository:
             with conn.cursor() as cursor:
                 cursor.execute(sql)
                 rows = cursor.fetchall()
-        return [self._route_v2_row_to_dict(row) for row in rows]
+        return [self._model_route_row_to_dict(row) for row in rows]
 
-    def upsert_route_rules_v2(self, rules: list[dict[str, Any]]) -> int:
+    def upsert_model_routes(self, rules: list[dict[str, Any]]) -> int:
         """批量增改路由规则"""
         if not rules:
             return 0
 
         sql = """
-        INSERT INTO route_rules_v2 (model_key, is_enabled, priority, description)
+        INSERT INTO model_routes (model_key, is_enabled, priority, description)
         VALUES (%s, %s, %s, %s)
         ON CONFLICT (model_key) DO UPDATE SET
             is_enabled = EXCLUDED.is_enabled,
@@ -539,15 +539,15 @@ class PostgresRepository:
                 cursor.executemany(sql, values)
         return len(values)
 
-    def delete_route_rule_v2(self, model_key: str) -> bool:
+    def delete_model_route(self, model_key: str) -> bool:
         """删除路由规则"""
-        sql = "DELETE FROM route_rules_v2 WHERE model_key = %s"
+        sql = "DELETE FROM model_routes WHERE model_key = %s"
         with self._get_conn() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(sql, (model_key,))
                 return cursor.rowcount > 0
 
-    def _route_v2_row_to_dict(self, row: dict[str, Any]) -> dict[str, Any]:
+    def _model_route_row_to_dict(self, row: dict[str, Any]) -> dict[str, Any]:
         """将路由规则查询结果转换为字典"""
         return {
             "model_key": row["model_key"],
@@ -575,7 +575,7 @@ class PostgresRepository:
 
     def get_route_rule(self, model_name: str) -> dict[str, Any] | None:
         """根据模型名获取兼容格式的路由规则"""
-        rule = self.get_route_rule_v2(model_name)
+        rule = self.get_model_route(model_name)
         if not rule:
             return None
         # 转换为兼容格式
@@ -584,7 +584,7 @@ class PostgresRepository:
             "primary_provider": rule["provider"]["name"]
             if rule.get("provider")
             else None,
-            "fallback_provider": None,  # v2 不支持 fallback
+            "fallback_provider": None,  # 核心路由结构不支持 fallback
             "is_enabled": rule["is_enabled"] and rule["model"]["is_active"],
             "description": rule["description"],
             "created_at": rule["created_at"],
@@ -593,7 +593,7 @@ class PostgresRepository:
 
     def list_route_rules(self) -> list[dict[str, Any]]:
         """列出兼容格式的路由规则"""
-        rules = self.list_route_rules_v2()
+        rules = self.list_model_routes()
         return [
             {
                 "model_name": rule["model_key"],
@@ -611,10 +611,10 @@ class PostgresRepository:
 
     def upsert_route_rules(self, rules: list[dict[str, Any]]) -> int:
         """批量增改兼容格式的路由规则"""
-        # 将兼容格式转换为 route_rules_v2 所需数据
-        v2_rules = []
+        # 将兼容格式转换为 model_routes 所需数据
+        model_route_records = []
         for rule in rules:
-            v2_rules.append(
+            model_route_records.append(
                 {
                     "model_key": rule["model_name"],
                     "is_enabled": bool(rule.get("is_enabled", True)),
@@ -623,7 +623,7 @@ class PostgresRepository:
                 }
             )
             # Note: primary_provider / fallback_provider 通过 model 表关联
-        return self.upsert_route_rules_v2(v2_rules)
+        return self.upsert_model_routes(model_route_records)
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any] | None:
         """获取兼容格式的 Provider 配置"""

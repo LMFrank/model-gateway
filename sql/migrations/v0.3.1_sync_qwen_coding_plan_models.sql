@@ -33,7 +33,7 @@ ON CONFLICT (model_key) DO UPDATE SET
   description = EXCLUDED.description,
   updated_at = NOW();
 
-INSERT INTO route_rules_v2 (model_key, is_enabled, priority, description)
+INSERT INTO model_routes (model_key, is_enabled, priority, description)
 VALUES ('qwen3-coder-plus', TRUE, 0, 'Qwen3 Coder Plus - Coding Plan')
 ON CONFLICT (model_key) DO UPDATE SET
   is_enabled = EXCLUDED.is_enabled,

@@ -51,7 +51,7 @@ COMMENT ON COLUMN models.default_params IS '默认请求参数（JSON）';
 COMMENT ON COLUMN models.health_status IS '健康状态: unknown, healthy, unhealthy';
 
 -- route_rules 表（改造）
-CREATE TABLE IF NOT EXISTS route_rules_v2 (
+CREATE TABLE IF NOT EXISTS model_routes (
   model_key VARCHAR(128) PRIMARY KEY REFERENCES models(model_key),
   is_enabled BOOLEAN DEFAULT TRUE,
   priority INTEGER DEFAULT 0,
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS route_rules_v2 (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-COMMENT ON TABLE route_rules_v2 IS '路由规则表，通过 model_key 关联模型';
+COMMENT ON TABLE model_routes IS '模型路由表，通过 model_key 关联模型';
 
 -- ============================================================================
 -- 2. 创建索引
@@ -69,7 +69,7 @@ COMMENT ON TABLE route_rules_v2 IS '路由规则表，通过 model_key 关联模
 CREATE INDEX IF NOT EXISTS idx_models_provider_id ON models (provider_id);
 CREATE INDEX IF NOT EXISTS idx_models_health_status ON models (health_status);
 CREATE INDEX IF NOT EXISTS idx_models_is_active ON models (is_active);
-CREATE INDEX IF NOT EXISTS idx_route_rules_v2_enabled ON route_rules_v2 (is_enabled);
+CREATE INDEX IF NOT EXISTS idx_model_routes_enabled ON model_routes (is_enabled);
 
 -- ============================================================================
 -- 3. 创建更新时间触发器
@@ -93,8 +93,8 @@ CREATE TRIGGER update_models_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_route_rules_v2_updated_at
-  BEFORE UPDATE ON route_rules_v2
+CREATE TRIGGER update_model_routes_updated_at
+  BEFORE UPDATE ON model_routes
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
@@ -152,7 +152,7 @@ ON CONFLICT (model_key) DO UPDATE SET
   updated_at = NOW();
 
 -- 4.3 迁移 route_rules 到核心路由表
-INSERT INTO route_rules_v2 (model_key, is_enabled, priority, description, created_at, updated_at)
+INSERT INTO model_routes (model_key, is_enabled, priority, description, created_at, updated_at)
 SELECT 
   rr.model_name,
   rr.is_enabled,
@@ -183,4 +183,4 @@ WHERE provider_type = 'api';
 SELECT 'Migration Summary:' AS info;
 SELECT COUNT(*) AS total_providers FROM providers;
 SELECT COUNT(*) AS total_models FROM models;
-SELECT COUNT(*) AS total_routes FROM route_rules_v2;
+SELECT COUNT(*) AS total_routes FROM model_routes;

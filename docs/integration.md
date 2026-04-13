@@ -349,14 +349,14 @@ curl -X POST http://localhost:8080/api/routes \
 ```sql
 -- sql/migrations/v0.4.0_add_new_model.sql
 INSERT INTO providers (name, display_name, provider_type, base_url, api_key, is_enabled)
-VALUES ('new_api', 'New API', 'api', 'https://api.example.com/v1', 'sk-xxx', true);
+VALUES ('demo_api', 'Demo API', 'api', 'https://api.example.com/v1', 'sk-xxx', true);
 
 INSERT INTO models (provider_id, model_key, display_name, upstream_model, is_active)
-SELECT id, 'new-model', 'New Model', 'actual-model-name', true
-FROM providers WHERE name = 'new_api';
+SELECT id, 'demo-model', 'Demo Model', 'actual-model-name', true
+FROM providers WHERE name = 'demo_api';
 
-INSERT INTO route_rules_v2 (model_key, is_enabled)
-VALUES ('new-model', true);
+INSERT INTO model_routes (model_key, is_enabled)
+VALUES ('demo-model', true);
 ```
 
 ## 健康检查
