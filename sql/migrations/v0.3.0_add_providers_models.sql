@@ -56,7 +56,7 @@ INSERT INTO models (provider_id, model_key, display_name, upstream_model, is_act
 ((SELECT id FROM providers WHERE name = 'openai_api'), 'gpt-5.3-codex', 'GPT-5.3 Codex', 'gpt-5.3-codex', true, 'GPT-5.3 Codex - sub2api 代理');
 
 -- ============================================================================
--- 4. 新增 Route Rules (v2)
+-- 4. 新增 Route Rules
 -- ============================================================================
 
 INSERT INTO route_rules_v2 (model_key, is_enabled, priority, description) VALUES
@@ -83,7 +83,7 @@ ON CONFLICT (model_key) DO UPDATE SET
   description = EXCLUDED.description,
   updated_at = NOW();
 
--- 保留旧的 route_rules 表兼容
+-- 同步兼容 route_rules 表
 INSERT INTO route_rules (model_name, primary_provider, fallback_provider, is_enabled, description) VALUES
 -- CLI providers
 ('kimi-for-coding', 'kimi_cli', NULL, true, 'Kimi CLI 调用'),

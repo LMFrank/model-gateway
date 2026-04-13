@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS route_rules_v2 (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-COMMENT ON TABLE route_rules_v2 IS '路由规则表 v2，通过 model_key 关联模型';
+COMMENT ON TABLE route_rules_v2 IS '路由规则表，通过 model_key 关联模型';
 
 -- ============================================================================
 -- 2. 创建索引
@@ -151,7 +151,7 @@ ON CONFLICT (model_key) DO UPDATE SET
   is_active = EXCLUDED.is_active,
   updated_at = NOW();
 
--- 4.3 迁移 route_rules 到 route_rules_v2
+-- 4.3 迁移 route_rules 到核心路由表
 INSERT INTO route_rules_v2 (model_key, is_enabled, priority, description, created_at, updated_at)
 SELECT 
   rr.model_name,

@@ -203,7 +203,7 @@ def create_app() -> FastAPI:
         if any(item.fallback_provider for item in body.rules):
             raise HTTPException(
                 status_code=400,
-                detail="fallback_provider is deprecated and no longer supported",
+                detail="fallback_provider is not supported",
             )
         await run_in_threadpool(
             repository.upsert_route_rules, [item.model_dump() for item in body.rules]
@@ -212,7 +212,7 @@ def create_app() -> FastAPI:
         return {"items": items}
 
     # ==========================================================================
-    # New Admin APIs (v2 Schema)
+    # Admin APIs
     # ==========================================================================
 
     # Provider CRUD
@@ -308,7 +308,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="model not found")
         return {"message": "model deleted"}
 
-    # Route Rules v2
+    # Route Rules
     @app.get("/api/routes", dependencies=[Depends(require_admin_auth)])
     async def list_routes_v2() -> RouteRulesV2ListResponse:
         items = await run_in_threadpool(repository.list_route_rules_v2)

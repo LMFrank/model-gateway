@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 # ==========================================================================
-# Provider Schemas (New Schema)
+# Provider Schemas
 # ==========================================================================
 
 
@@ -51,7 +51,7 @@ class ProvidersListResponse(BaseModel):
 
 
 # ==========================================================================
-# Model Schemas (New Schema)
+# Model Schemas
 # ==========================================================================
 
 
@@ -106,7 +106,7 @@ class ModelsListResponse(BaseModel):
 
 
 # ==========================================================================
-# Route Rules Schemas (New Schema v2)
+# Route Rules Schemas
 # ==========================================================================
 
 
@@ -150,7 +150,7 @@ class RouteRulesV2ListResponse(BaseModel):
 
 
 # ==========================================================================
-# Legacy Schemas (Backward Compatible)
+# Compatibility Schemas
 # ==========================================================================
 
 
@@ -160,7 +160,7 @@ class RouteRuleUpsert(BaseModel):
     fallback_provider: str | None = Field(
         default=None,
         max_length=64,
-        description="已废弃；当前路由引擎只使用 primary_provider。",
+        description="兼容字段；提交时保持为空，路由引擎只使用 primary_provider。",
     )
     is_enabled: bool = True
     description: str | None = Field(default=None, max_length=255)

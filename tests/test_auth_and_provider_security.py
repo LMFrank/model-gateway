@@ -40,7 +40,7 @@ def test_admin_endpoint_accepts_configured_token() -> None:
     assert response.json() == {"items": []}
 
 
-def test_legacy_admin_routes_reject_fallback_provider() -> None:
+def test_admin_routes_reject_fallback_provider() -> None:
     app = _build_app()
     client = TestClient(app)
 
@@ -52,14 +52,14 @@ def test_legacy_admin_routes_reject_fallback_provider() -> None:
                 {
                     "model_name": "demo-model",
                     "primary_provider": "demo-provider",
-                    "fallback_provider": "legacy-fallback",
+                    "fallback_provider": "unused-fallback",
                 }
             ]
         },
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "fallback_provider is deprecated and no longer supported"
+    assert response.json()["detail"] == "fallback_provider is not supported"
 
 
 def test_client_endpoint_rejects_wrong_scope_token() -> None:

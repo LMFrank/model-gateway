@@ -168,7 +168,7 @@ class PostgresRepository:
             return False
 
     # ==========================================================================
-    # Provider CRUD (New Schema)
+    # Provider CRUD
     # ==========================================================================
 
     def get_provider(self, provider_id: int) -> dict[str, Any] | None:
@@ -297,7 +297,7 @@ class PostgresRepository:
                 return cursor.rowcount > 0
 
     # ==========================================================================
-    # Model CRUD (New Schema)
+    # Model CRUD
     # ==========================================================================
 
     def get_model(self, model_id: int) -> dict[str, Any] | None:
@@ -465,11 +465,11 @@ class PostgresRepository:
         }
 
     # ==========================================================================
-    # Route Rules (New Schema - v2)
+    # Route Rules
     # ==========================================================================
 
     def get_route_rule_v2(self, model_key: str) -> dict[str, Any] | None:
-        """根据 model_key 获取路由规则 (v2)"""
+        """根据 model_key 获取路由规则"""
         sql = """
         SELECT r.model_key, r.is_enabled, r.priority, r.description, 
                r.created_at, r.updated_at,
@@ -491,7 +491,7 @@ class PostgresRepository:
         return self._route_v2_row_to_dict(row)
 
     def list_route_rules_v2(self) -> list[dict[str, Any]]:
-        """列出所有路由规则 (v2)"""
+        """列出所有路由规则"""
         sql = """
         SELECT r.model_key, r.is_enabled, r.priority, r.description, 
                r.created_at, r.updated_at,
@@ -510,7 +510,7 @@ class PostgresRepository:
         return [self._route_v2_row_to_dict(row) for row in rows]
 
     def upsert_route_rules_v2(self, rules: list[dict[str, Any]]) -> int:
-        """批量增改路由规则 (v2)"""
+        """批量增改路由规则"""
         if not rules:
             return 0
 
@@ -540,7 +540,7 @@ class PostgresRepository:
         return len(values)
 
     def delete_route_rule_v2(self, model_key: str) -> bool:
-        """删除路由规则 (v2)"""
+        """删除路由规则"""
         sql = "DELETE FROM route_rules_v2 WHERE model_key = %s"
         with self._get_conn() as conn:
             with conn.cursor() as cursor:
@@ -548,7 +548,7 @@ class PostgresRepository:
                 return cursor.rowcount > 0
 
     def _route_v2_row_to_dict(self, row: dict[str, Any]) -> dict[str, Any]:
-        """将路由规则 v2 查询结果转换为字典"""
+        """将路由规则查询结果转换为字典"""
         return {
             "model_key": row["model_key"],
             "is_enabled": bool(row.get("is_enabled", True)),
@@ -570,15 +570,15 @@ class PostgresRepository:
         }
 
     # ==========================================================================
-    # Backward Compatible Methods (Legacy)
+    # Compatibility Adapters
     # ==========================================================================
 
     def get_route_rule(self, model_name: str) -> dict[str, Any] | None:
-        """根据模型名获取路由规则 (Legacy - 使用 v2 表)"""
+        """根据模型名获取兼容格式的路由规则"""
         rule = self.get_route_rule_v2(model_name)
         if not rule:
             return None
-        # 转换为旧格式以保持兼容
+        # 转换为兼容格式
         return {
             "model_name": rule["model_key"],
             "primary_provider": rule["provider"]["name"]
@@ -592,7 +592,7 @@ class PostgresRepository:
         }
 
     def list_route_rules(self) -> list[dict[str, Any]]:
-        """列出所有路由规则 (Legacy - 使用 v2 表)"""
+        """列出兼容格式的路由规则"""
         rules = self.list_route_rules_v2()
         return [
             {
@@ -610,8 +610,8 @@ class PostgresRepository:
         ]
 
     def upsert_route_rules(self, rules: list[dict[str, Any]]) -> int:
-        """批量增改路由规则 (Legacy - 重定向到 v2)"""
-        # 将旧格式转换为 v2 格式
+        """批量增改兼容格式的路由规则"""
+        # 将兼容格式转换为 route_rules_v2 所需数据
         v2_rules = []
         for rule in rules:
             v2_rules.append(
@@ -622,16 +622,16 @@ class PostgresRepository:
                     "description": rule.get("description"),
                 }
             )
-            # Note: primary_provider/fallback_provider 需要通过 model 表关联
+            # Note: primary_provider / fallback_provider 通过 model 表关联
         return self.upsert_route_rules_v2(v2_rules)
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any] | None:
-        """获取 Provider 配置 (Legacy - 使用新 providers 表)"""
+        """获取兼容格式的 Provider 配置"""
         provider = self.get_provider_by_name(provider_name, include_secret=True)
         if not provider:
             return None
 
-        # 转换为旧格式
+        # 转换为兼容格式
         config = provider.get("config", {}).copy()
         config["base_url"] = provider.get("base_url")
         config["api_key"] = provider.get("api_key")
@@ -645,7 +645,7 @@ class PostgresRepository:
         }
 
     def list_provider_configs(self) -> list[dict[str, Any]]:
-        """列出所有 Provider 配置 (Legacy - 使用新 providers 表)"""
+        """列出兼容格式的 Provider 配置"""
         providers = [
             self.get_provider_by_name(item["name"], include_secret=True)
             for item in self.list_providers()
@@ -669,7 +669,7 @@ class PostgresRepository:
         return out
 
     def upsert_provider_configs(self, providers: list[dict[str, Any]]) -> int:
-        """批量增改 Provider 配置 (Legacy - 重定向到新方法)"""
+        """批量增改兼容格式的 Provider 配置"""
         for item in providers:
             name = item["provider_name"]
             existing = self.get_provider_by_name(name)

@@ -27,7 +27,7 @@ Model Gateway 兼容 OpenAI API 格式，任何支持 OpenAI API 的应用都可
 > 说明：
 > - 客户端调用 `/v1/*` 使用 `GATEWAY_CLIENT_TOKEN`
 > - 管理接口 `/api/*`、`/admin/*` 使用 `GATEWAY_ADMIN_TOKEN`
-> - legacy 结构中的 `fallback_provider` 已废弃，当前运行时只使用 `primary_provider`
+> - 兼容字段 `fallback_provider` 当前保持为空，运行时只使用 `primary_provider`
 
 ## 接入方式
 

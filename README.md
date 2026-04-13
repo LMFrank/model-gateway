@@ -99,8 +99,8 @@ curl http://localhost:8080/healthz
 
 ### 数据库初始化（空库 / 新环境）
 
-如果是首次创建数据库，不要再只执行 legacy 的 `sql/init_model_gateway.sql`。  
-当前 schema 的一键 bootstrap 入口是：
+如果是首次创建数据库，不要只执行兼容初始化脚本 `sql/init_model_gateway.sql`。  
+完整运行时结构的一键 bootstrap 入口是：
 
 ```bash
 psql -h <pg-host> -U <pg-admin-user> -d postgres \
@@ -109,8 +109,8 @@ psql -h <pg-host> -U <pg-admin-user> -d postgres \
 ```
 
 该脚本会一次性创建：
-- legacy 审计表：`route_rules`、`call_logs`、`daily_usage_agg`
-- current schema：`providers`、`models`、`route_rules_v2`、`health_checks`
+- 兼容/审计表：`route_rules`、`call_logs`、`daily_usage_agg`
+- 核心表：`providers`、`models`、`route_rules_v2`、`health_checks`
 - 当前默认 providers / models / routes（含 `openai_api` 占位 provider）
 
 ### 访问地址
@@ -299,7 +299,7 @@ models = [m["id"] for m in response.json()["data"]]
 > 所有管理接口都要求 `Authorization: Bearer ${GATEWAY_ADMIN_TOKEN}`。  
 > 前端管理台会在首次 401 时提示输入 admin token，也可在构建时注入 `VITE_GATEWAY_ADMIN_TOKEN`。
 >
-> 路由 fallback 说明：legacy 结构中的 `fallback_provider` 已废弃，当前运行时只使用 `primary_provider`。
+> 路由 fallback 说明：兼容字段 `fallback_provider` 当前保持为空，运行时只使用 `primary_provider`。
 
 ## 本地开发
 
@@ -366,7 +366,7 @@ API Key 存储在数据库，建议：
 
 ## 版本历史
 
-- `v0.1.6` (2026-04-10): 补齐 admin/client Bearer 鉴权；新增 client-safe `/v1/models`；provider secret 默认脱敏；新增 `sql/bootstrap_model_gateway.sql` 并完成空库 bootstrap smoke 验证；废弃 runtime fallback 语义
+- `v0.1.6` (2026-04-10): 补齐 admin/client Bearer 鉴权；新增 client-safe `/v1/models`；provider secret 默认脱敏；新增 `sql/bootstrap_model_gateway.sql` 并完成空库 bootstrap smoke 验证；移除 runtime fallback 语义
 - `v0.1.5` (2026-04-08): 同步百炼 Coding Plan 的 Qwen 模型配置（新增 `qwen3-coder-plus`）；新增幂等迁移脚本 `v0.3.1`；完成生产环境迁移与接口实测验证
 - `v0.1.4` (2026-04-08): 完成健康检查交互优化（显示进行中与状态中文化）；补齐前端 ESLint 配置；补齐本地测试依赖并完成生产链路验证
 - `v0.1.3` (2026-04-02): 接入 monitor 中台；新增 `/metrics` 暴露；补齐 monitor labels 与共享网络接入；统一 observability 展示口径

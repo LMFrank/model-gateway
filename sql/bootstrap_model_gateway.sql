@@ -20,7 +20,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO model_gateway_u
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO model_gateway_user;
 
 -- ============================================================================
--- Legacy tables（兼容旧接口 / 审计）
+-- Compatibility tables（兼容接口 / 审计）
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS route_rules (
@@ -177,7 +177,7 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- Seed legacy provider_configs（便于兼容与迁移）
+-- Seed compatibility provider_configs（便于兼容与迁移）
 -- ============================================================================
 
 INSERT INTO provider_configs (provider_name, config_json, is_enabled)
@@ -261,8 +261,8 @@ VALUES
     'Codex CLI 调用入口',
     TRUE
   ),
-  ('qwen_api', 'Qwen API (Legacy)', 'api', 'https://dashscope.aliyuncs.com/compatible-mode/v1', '', '{}'::jsonb,
-    'Legacy Qwen API 配置，占位兼容旧 schema',
+  ('qwen_api', 'Qwen API', 'api', 'https://dashscope.aliyuncs.com/compatible-mode/v1', '', '{}'::jsonb,
+    'Qwen API 兼容配置，占位供兼容结构使用',
     FALSE
   ),
   ('bailian_coding_api', '百炼 Coding Plan', 'api', 'https://coding.dashscope.aliyuncs.com/v1', '', '{}'::jsonb,
@@ -317,7 +317,7 @@ ON CONFLICT (model_key) DO UPDATE SET
   updated_at = NOW();
 
 -- ============================================================================
--- Seed route rules（v2 + legacy）
+-- Seed route rules（核心表 + 兼容表）
 -- ============================================================================
 
 INSERT INTO route_rules_v2 (model_key, is_enabled, priority, description)

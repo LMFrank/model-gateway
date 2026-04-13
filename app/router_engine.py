@@ -19,8 +19,8 @@ class RouteDecision:
 class RouterEngine:
     """按模型名精确匹配并返回路由决策。
 
-    fallback_provider 仍保留在部分 legacy 结构中以兼容旧数据，
-    但当前运行时已明确废弃，只使用 primary_provider。
+    路由引擎只读取 primary_provider；fallback_provider
+    在兼容输出结构中固定返回 None。
     """
 
     @staticmethod
