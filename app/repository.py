@@ -140,6 +140,19 @@ class PostgresRepository:
             "updated_at": row.get("updated_at"),
         }
 
+    @staticmethod
+    def _provider_to_compat_config(provider: dict[str, Any]) -> dict[str, Any]:
+        config = (provider.get("config") or {}).copy()
+        config["base_url"] = provider.get("base_url")
+        config["api_key"] = provider.get("api_key")
+        return {
+            "provider_name": provider["name"],
+            "config": config,
+            "is_enabled": provider["is_enabled"],
+            "created_at": provider["created_at"],
+            "updated_at": provider["updated_at"],
+        }
+
     def healthcheck(self) -> bool:
         required_tables = (
             "providers",
@@ -171,7 +184,9 @@ class PostgresRepository:
     # Provider CRUD
     # ==========================================================================
 
-    def get_provider(self, provider_id: int) -> dict[str, Any] | None:
+    def get_provider(
+        self, provider_id: int, *, include_secret: bool = False
+    ) -> dict[str, Any] | None:
         """根据 ID 获取 Provider"""
         sql = """
         SELECT id, name, display_name, provider_type, base_url, api_key, 
@@ -186,7 +201,7 @@ class PostgresRepository:
                 row = cursor.fetchone()
         if not row:
             return None
-        return self._provider_row_to_dict(row)
+        return self._provider_row_to_dict(row, include_secret=include_secret)
 
     def get_provider_by_name(
         self, name: str, *, include_secret: bool = True
@@ -611,18 +626,32 @@ class PostgresRepository:
 
     def upsert_route_rules(self, rules: list[dict[str, Any]]) -> int:
         """批量增改兼容格式的路由规则"""
-        # 将兼容格式转换为 model_routes 所需数据
         model_route_records = []
         for rule in rules:
+            model_name = str(rule.get("model_name") or "").strip()
+            primary_provider = str(rule.get("primary_provider") or "").strip()
+            model = self.get_model_by_key(model_name)
+            if not model:
+                raise RepositoryError(
+                    f"compat route rule requires existing model: {model_name}"
+                )
+
+            current_provider = (model.get("provider") or {}).get("name")
+            if current_provider != primary_provider:
+                raise RepositoryError(
+                    "compat route rule cannot change model provider binding; "
+                    f"model {model_name} is bound to {current_provider or 'none'}, "
+                    f"not {primary_provider or 'none'}"
+                )
+
             model_route_records.append(
                 {
-                    "model_key": rule["model_name"],
+                    "model_key": model_name,
                     "is_enabled": bool(rule.get("is_enabled", True)),
                     "priority": 0,
                     "description": rule.get("description"),
                 }
             )
-            # Note: primary_provider / fallback_provider 通过 model 表关联
         return self.upsert_model_routes(model_route_records)
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any] | None:
@@ -630,19 +659,7 @@ class PostgresRepository:
         provider = self.get_provider_by_name(provider_name, include_secret=True)
         if not provider:
             return None
-
-        # 转换为兼容格式
-        config = provider.get("config", {}).copy()
-        config["base_url"] = provider.get("base_url")
-        config["api_key"] = provider.get("api_key")
-
-        return {
-            "provider_name": provider["name"],
-            "config": config,
-            "is_enabled": provider["is_enabled"],
-            "created_at": provider["created_at"],
-            "updated_at": provider["updated_at"],
-        }
+        return self._provider_to_compat_config(provider)
 
     def list_provider_configs(self) -> list[dict[str, Any]]:
         """列出兼容格式的 Provider 配置"""
@@ -654,39 +671,46 @@ class PostgresRepository:
         for provider in providers:
             if not provider:
                 continue
-            config = provider.get("config", {}).copy()
-            config["base_url"] = provider.get("base_url")
-            config["api_key"] = provider.get("api_key")
-            out.append(
-                {
-                    "provider_name": provider["name"],
-                    "config": config,
-                    "is_enabled": provider["is_enabled"],
-                    "created_at": provider["created_at"],
-                    "updated_at": provider["updated_at"],
-                }
-            )
+            out.append(self._provider_to_compat_config(provider))
         return out
 
     def upsert_provider_configs(self, providers: list[dict[str, Any]]) -> int:
-        """批量增改兼容格式的 Provider 配置"""
+        """批量更新兼容格式的 Provider 配置（不负责创建 Provider）"""
         for item in providers:
             name = item["provider_name"]
             existing = self.get_provider_by_name(name)
             config = item.get("config", {})
+            if not isinstance(config, dict):
+                raise RepositoryError(
+                    f"compat provider config for {name} must be an object"
+                )
+            if not existing:
+                raise RepositoryError(
+                    "compat provider config can only update existing providers; "
+                    f"create provider via /api/providers first: {name}"
+                )
+            inferred_provider_type = (
+                existing.get("provider_type")
+                if existing.get("provider_type") in {"api", "cli"}
+                else "api"
+                if self._normalize_optional_text(config.get("base_url"))
+                else "cli"
+            )
+            has_base_url = bool(self._normalize_optional_text(config.get("base_url")))
+            if inferred_provider_type == "api" and not (has_base_url or existing):
+                raise RepositoryError(
+                    f"compat provider config missing base_url for api provider: {name}"
+                )
             data = {
                 "name": name,
                 "display_name": name,
-                "provider_type": "api" if name.endswith("_api") else "cli",
+                "provider_type": inferred_provider_type,
                 "base_url": config.get("base_url"),
                 "api_key": config.get("api_key"),
                 "config": config,
                 "is_enabled": bool(item.get("is_enabled", True)),
             }
-            if existing:
-                self.update_provider(existing["id"], data)
-            else:
-                self.create_provider(data)
+            self.update_provider(existing["id"], data)
         return len(providers)
 
     # ==========================================================================

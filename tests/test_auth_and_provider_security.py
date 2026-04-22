@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.crypto import generate_key
 from app.main import create_app
-from app.repository import PostgresRepository
+from app.repository import PostgresRepository, RepositoryError
 
 
 def _build_app():
@@ -40,6 +41,42 @@ def test_admin_endpoint_accepts_configured_token() -> None:
     assert response.json() == {"items": []}
 
 
+def test_admin_compat_routes_include_deprecation_headers() -> None:
+    app = _build_app()
+    app.state.repository.list_route_rules = lambda: []
+    client = TestClient(app)
+
+    response = client.get(
+        "/admin/routes",
+        headers={"Authorization": "Bearer admin-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Model-Gateway-Compat"] == "deprecated"
+    assert (
+        response.headers["X-Model-Gateway-Compat-Preferred"]
+        == "/api/providers,/api/routes"
+    )
+
+
+def test_admin_compat_providers_include_deprecation_headers() -> None:
+    app = _build_app()
+    app.state.repository.list_provider_configs = lambda: []
+    client = TestClient(app)
+
+    response = client.get(
+        "/admin/providers",
+        headers={"Authorization": "Bearer admin-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Model-Gateway-Compat"] == "deprecated"
+    assert (
+        response.headers["X-Model-Gateway-Compat-Preferred"]
+        == "/api/providers,/api/routes"
+    )
+
+
 def test_admin_routes_reject_fallback_provider() -> None:
     app = _build_app()
     client = TestClient(app)
@@ -60,6 +97,63 @@ def test_admin_routes_reject_fallback_provider() -> None:
 
     assert response.status_code == 400
     assert response.json()["detail"] == "fallback_provider is not supported"
+
+
+def test_admin_routes_reject_provider_binding_change_via_compat_api() -> None:
+    app = _build_app()
+    app.state.repository.upsert_route_rules = (  # type: ignore[method-assign]
+        lambda rules: (_ for _ in ()).throw(
+            RepositoryError(
+                "compat route rule cannot change model provider binding; model demo-model is bound to current-provider, not requested-provider"
+            )
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/admin/routes",
+        headers={"Authorization": "Bearer admin-token"},
+        json={
+            "rules": [
+                {
+                    "model_name": "demo-model",
+                    "primary_provider": "requested-provider",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 400
+    assert "cannot change model provider binding" in response.json()["detail"]
+
+
+def test_admin_providers_reject_creating_provider_via_compat_api() -> None:
+    app = _build_app()
+    app.state.repository.upsert_provider_configs = (  # type: ignore[method-assign]
+        lambda providers: (_ for _ in ()).throw(
+            RepositoryError(
+                "compat provider config can only update existing providers; create provider via /api/providers first: new-provider"
+            )
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/admin/providers",
+        headers={"Authorization": "Bearer admin-token"},
+        json={
+            "providers": [
+                {
+                    "provider_name": "new-provider",
+                    "config": {"base_url": "https://example.com/v1"},
+                    "is_enabled": True,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 400
+    assert "create provider via /api/providers first" in response.json()["detail"]
 
 
 def test_client_endpoint_rejects_wrong_scope_token() -> None:
@@ -164,7 +258,7 @@ def test_client_models_endpoint_lists_only_active_models() -> None:
             {
                 "id": "qwen3-max",
                 "object": "model",
-                "owned_by": "bailian_coding_api",
+                "owned_by": "model-gateway",
                 "display_name": "Qwen3 Max",
             }
         ],
@@ -238,3 +332,121 @@ def test_repository_healthcheck_requires_current_schema_tables() -> None:
     repository._get_conn = lambda: FakeConn()  # type: ignore[method-assign]
 
     assert repository.healthcheck() is False
+
+
+def test_upsert_provider_configs_treats_existing_base_url_provider_as_api() -> None:
+    repository = PostgresRepository(Settings())
+    updated: dict = {}
+
+    repository.get_provider_by_name = lambda *args, **kwargs: {  # type: ignore[method-assign]
+        "id": 7,
+        "provider_type": "api",
+    }
+    repository.update_provider = (  # type: ignore[method-assign]
+        lambda provider_id, data: updated.update({"provider_id": provider_id, **data}) or True
+    )
+
+    result = repository.upsert_provider_configs(
+        [
+            {
+                "provider_name": "generic-openai",
+                "config": {
+                    "base_url": "https://example.com/v1",
+                    "api_key": "sk-test",
+                },
+                "is_enabled": True,
+            }
+        ]
+    )
+
+    assert result == 1
+    assert updated["provider_id"] == 7
+    assert updated["provider_type"] == "api"
+    assert updated["base_url"] == "https://example.com/v1"
+
+
+def test_upsert_provider_configs_preserves_existing_provider_type() -> None:
+    repository = PostgresRepository(Settings())
+    updated: dict = {}
+
+    repository.get_provider_by_name = lambda *args, **kwargs: {  # type: ignore[method-assign]
+        "id": 42,
+        "provider_type": "api",
+    }
+    repository.update_provider = (  # type: ignore[method-assign]
+        lambda provider_id, data: updated.update({"provider_id": provider_id, **data}) or True
+    )
+
+    result = repository.upsert_provider_configs(
+        [
+            {
+                "provider_name": "existing-provider",
+                "config": {"command": "custom-cli"},
+                "is_enabled": True,
+            }
+        ]
+    )
+
+    assert result == 1
+    assert updated["provider_id"] == 42
+    assert updated["provider_type"] == "api"
+
+
+def test_upsert_provider_configs_rejects_unknown_provider_creation() -> None:
+    repository = PostgresRepository(Settings())
+    repository.get_provider_by_name = lambda *args, **kwargs: None  # type: ignore[method-assign]
+
+    with pytest.raises(RepositoryError, match="create provider via /api/providers first"):
+        repository.upsert_provider_configs(
+            [
+                {
+                    "provider_name": "new-provider",
+                    "config": {"base_url": "https://example.com/v1"},
+                    "is_enabled": True,
+                }
+            ]
+        )
+
+
+def test_upsert_route_rules_requires_existing_model_and_matching_provider() -> None:
+    repository = PostgresRepository(Settings())
+    repository.get_model_by_key = lambda model_key: {  # type: ignore[method-assign]
+        "model_key": model_key,
+        "provider": {"name": "current-provider"},
+    }
+    called: dict = {}
+    repository.upsert_model_routes = lambda records: called.update(  # type: ignore[method-assign]
+        {"records": records}
+    ) or len(records)
+
+    with pytest.raises(RepositoryError):
+        repository.upsert_route_rules(
+            [
+                {
+                    "model_name": "demo-model",
+                    "primary_provider": "other-provider",
+                    "is_enabled": True,
+                }
+            ]
+        )
+
+    result = repository.upsert_route_rules(
+        [
+            {
+                "model_name": "demo-model",
+                "primary_provider": "current-provider",
+                "is_enabled": False,
+                "description": "compat update",
+            }
+        ]
+    )
+
+    assert result == 1
+    assert called["records"] == [
+        {
+            "model_key": "demo-model",
+            "is_enabled": False,
+            "priority": 0,
+            "description": "compat update",
+        }
+    ]

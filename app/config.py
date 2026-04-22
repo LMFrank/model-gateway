@@ -41,7 +41,12 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("PG_CONNECT_TIMEOUT", "MYSQL_CONNECT_TIMEOUT"),
     )
 
-    qwen_timeout_sec: int = Field(default=120, alias="QWEN_TIMEOUT_SEC")
+    openai_compatible_timeout_sec: int = Field(
+        default=120,
+        validation_alias=AliasChoices(
+            "OPENAI_COMPATIBLE_TIMEOUT_SEC", "QWEN_TIMEOUT_SEC"
+        ),
+    )
     kimi_timeout_sec: int = Field(default=120, alias="KIMI_TIMEOUT_SEC")
     kimi_cli_cmd: str = Field(default="kimi", alias="KIMI_CLI_CMD")
 

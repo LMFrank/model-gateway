@@ -118,6 +118,77 @@ psql -h <pg-host> -U <pg-admin-user> -d postgres \
 - API: http://localhost:8080
 - 管理界面: http://localhost:8620
 
+### 运行模式
+
+项目支持两种运行模式，并保持宿主机端口固定为 `localhost:8080`：
+
+1. **本地直连模式**
+   - 适用于需要复用宿主机网络能力的私有上游（例如零信任、专线、宿主机本地代理）
+   - 切换命令：
+
+   ```bash
+   ./scripts/switch_to_local_runtime.sh
+   ```
+
+   如需把本地模式做成更稳定的 macOS 用户常驻服务，可选执行：
+
+   ```bash
+   ./scripts/install_local_gateway_service.sh
+   ./scripts/local_gateway_service_status.sh
+   ```
+
+   卸载：
+
+   ```bash
+   ./scripts/uninstall_local_gateway_service.sh
+   ```
+
+   > 说明：`launchd` 常驻服务当前仅作为实验性能力保留。
+   > 对依赖宿主机网络边界的私有上游，当前稳定通过完整验收的是 `tmux` 本地模式。
+   > 因此 `./scripts/switch_to_local_runtime.sh` 默认仍回到该模式。
+
+2. **Docker 运行模式**
+   - 适用于上游模型可由 Docker 直接访问的场景
+   - 切换命令：
+
+   ```bash
+   ./scripts/switch_to_docker_runtime.sh
+   ```
+
+说明：
+- 宿主机始终使用 `http://localhost:8080`
+- Docker 业务容器建议使用 `http://host.docker.internal:8080/v1`
+- `frontend` 会通过 `FRONTEND_GATEWAY_UPSTREAM` 在 `host.docker.internal` 与 `model-gateway` 间切换
+- 私有 provider / 文档 / 验收脚本建议放到本地 `sql/private/`、`docs/private/`、`scripts/private/` overlay，并由 `.gitignore` 排除
+
+### 一键切换 / 验收
+
+可直接使用：
+
+```bash
+# 仅切换并验收 gateway
+./scripts/release_runtime.sh --mode local
+
+# 切换并连同 StockAgents 一起重启、验收
+./scripts/release_runtime.sh --mode local --with-stock
+
+# 只跑验收，不切换
+./scripts/verify_runtime.sh --mode local --with-stock
+```
+
+如果更习惯 `make`：
+
+```bash
+make runtime-local
+make runtime-local-stock
+make runtime-docker
+make runtime-docker-stock
+make verify-runtime
+make verify-runtime-stock
+make verify-runtime-docker
+make verify-runtime-docker-stock
+```
+
 ### 升级已有环境
 
 当现网仍使用旧核心路由表名时，先执行数据库迁移，再重建服务：
@@ -218,6 +289,7 @@ OPENAI_API_KEY=your-gateway-token
 
 | model_key | Provider | 说明 |
 |-----------|----------|------|
+| `qwen3.6-plus` | 百炼 Coding Plan | 订阅制 |
 | `qwen3.5-plus` | 百炼 Coding Plan | 订阅制 |
 | `qwen3-max` | 百炼 Coding Plan | 订阅制 |
 | `qwen3-coder` | 百炼 Coding Plan | 订阅制 |
@@ -247,6 +319,7 @@ OPENAI_API_KEY=your-gateway-token
 | `GATEWAY_CLIENT_TOKEN` | 客户端 Token | - |
 | `GATEWAY_ADMIN_TOKEN` | 管理端 Token | - |
 | `VITE_GATEWAY_ADMIN_TOKEN` | 前端构建期注入的管理端 Token（可选） | - |
+| `FRONTEND_GATEWAY_UPSTREAM` | 前端容器要代理到的 gateway 主机名（`host.docker.internal` 或 `model-gateway`） | `host.docker.internal` |
 | `PG_HOST` | PostgreSQL 主机 | localhost |
 | `PG_PORT` | PostgreSQL 端口 | 5432 |
 | `PG_USER` | PostgreSQL 用户 | postgres |
@@ -295,6 +368,8 @@ models = [m["id"] for m in response.json()["data"]]
 
 详细接入文档: [docs/integration.md](docs/integration.md)
 
+运行 / 发布 / 验收 SOP: [docs/runtime-release-sop.md](docs/runtime-release-sop.md)
+
 ## API 文档
 
 ### 核心接口
@@ -321,6 +396,48 @@ models = [m["id"] for m in response.json()["data"]]
 > 前端管理台会在首次 401 时提示输入 admin token，也可在构建时注入 `VITE_GATEWAY_ADMIN_TOKEN`。
 >
 > 路由 fallback 说明：兼容字段 `fallback_provider` 当前保持为空，运行时只使用 `primary_provider`。
+>
+> 兼容层说明：`/admin/providers` 与 `/admin/routes` 仅作为 **deprecated compatibility surface** 保留。
+> - 创建 / 删除 provider 请使用核心 `/api/providers`
+> - 路由写入请优先使用核心 `/api/routes`
+> - 兼容层响应会返回 `X-Model-Gateway-Compat: deprecated`
+
+## 发布前闭环验证清单
+
+发布或切换运行模式后，至少执行以下验证：
+
+```bash
+# 基础健康
+curl http://localhost:8080/healthz
+curl -I http://localhost:8620
+
+# 客户端模型目录
+curl -H "Authorization: Bearer $GATEWAY_CLIENT_TOKEN" \
+  http://localhost:8080/v1/models
+
+# 管理接口
+curl -H "Authorization: Bearer $GATEWAY_ADMIN_TOKEN" \
+  http://localhost:8080/api/providers
+curl -H "Authorization: Bearer $GATEWAY_ADMIN_TOKEN" \
+  "http://localhost:8080/admin/calls?limit=5"
+curl -H "Authorization: Bearer $GATEWAY_ADMIN_TOKEN" \
+  "http://localhost:8080/admin/usage/summary?date_from=$(date +%F)&date_to=$(date +%F)"
+
+# 公网 provider 冒烟（docker / local 都应验证）
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer ${GATEWAY_CLIENT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen3.6-plus","messages":[{"role":"user","content":"回复OK，不要解释。"}],"temperature":0}'
+
+```
+
+如果还有业务项目依赖 gateway（例如 StockAgents），发布后还要补以下业务场景验证：
+
+- 设置中心模型配置读取
+- 单股分析
+- 批量分析 / 定时任务
+- `/api/health/check/provider/{id}` 与 `/api/health/check/model/{id}`（公共脚本已按模型名动态解析 ID）
+- `admin/calls` / `admin/usage/summary` 是否正常落库统计
 
 ## 本地开发
 

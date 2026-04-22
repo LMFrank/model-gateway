@@ -156,7 +156,11 @@ class ModelRoutesListResponse(BaseModel):
 
 class RouteRuleUpsert(BaseModel):
     model_name: str = Field(min_length=1, max_length=128)
-    primary_provider: str = Field(min_length=1, max_length=64)
+    primary_provider: str = Field(
+        min_length=1,
+        max_length=64,
+        description="兼容字段；必须与该 model 当前绑定的 provider 一致，不能通过此接口改绑 provider。",
+    )
     fallback_provider: str | None = Field(
         default=None,
         max_length=64,
@@ -177,7 +181,10 @@ class RouteRuleOut(RouteRuleUpsert):
 
 class ProviderConfigUpsert(BaseModel):
     provider_name: str = Field(min_length=1, max_length=64)
-    config: dict[str, Any] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="兼容配置对象；仅允许更新已存在 provider，创建 provider 请使用 /api/providers。",
+    )
     is_enabled: bool = True
 
 

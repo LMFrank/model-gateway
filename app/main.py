@@ -11,11 +11,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
-from app.adapters import KimiCliAdapter, QwenApiAdapter
+from app.adapters import KimiCliAdapter, OpenAICompatibleAdapter
 from app.adapters.base import AdapterError
 from app.auth import require_admin_auth, require_client_auth
 from app.config import get_settings
-from app.repository import PostgresRepository
+from app.repository import PostgresRepository, RepositoryError
 from app.router_engine import RouteNotFoundError, RouterEngine
 from app.schemas import (
     ModelCreate,
@@ -35,6 +35,11 @@ logger = logging.getLogger("model-gateway")
 
 APP_VERSION = "0.1.6"
 SERVICE_NAME = "model-gateway-api"
+PUBLIC_MODEL_OWNER = "model-gateway"
+COMPAT_DEPRECATION_HEADERS = {
+    "X-Model-Gateway-Compat": "deprecated",
+    "X-Model-Gateway-Compat-Preferred": "/api/providers,/api/routes",
+}
 HTTP_REQUESTS_TOTAL = Counter(
     "http_requests_total",
     "Total HTTP requests handled by the service.",
@@ -81,6 +86,53 @@ def _extract_task_fields(payload: dict[str, Any]) -> tuple[str | None, str | Non
     )
 
 
+def _format_provider_error(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return message
+    return exc.__class__.__name__
+
+
+def _resolve_adapter(
+    adapter_registry: dict[str, Any],
+    provider_name: str,
+    provider_type: str | None = None,
+    provider_config: dict[str, Any] | None = None,
+):
+    adapter = adapter_registry.get(provider_name)
+    if adapter is not None:
+        return adapter
+
+    normalized_type = str(provider_type or "").strip().lower()
+    if normalized_type == "api":
+        return adapter_registry.get("__default_api__")
+
+    if normalized_type == "cli":
+        return None
+
+    config = provider_config or {}
+    if config.get("base_url"):
+        return adapter_registry.get("__default_api__")
+
+    return None
+
+
+def _provider_runtime_config(provider: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(provider, dict):
+        return {}
+
+    runtime_config: dict[str, Any] = {}
+    config = provider.get("config")
+    if isinstance(config, dict):
+        runtime_config.update(config)
+
+    if provider.get("base_url") is not None:
+        runtime_config["base_url"] = provider.get("base_url")
+    if provider.get("api_key") is not None:
+        runtime_config["api_key"] = provider.get("api_key")
+    return runtime_config
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
 
@@ -88,13 +140,11 @@ def create_app() -> FastAPI:
 
     repository = PostgresRepository(settings)
     router_engine = RouterEngine()
+    default_api_adapter = OpenAICompatibleAdapter(settings)
     adapter_registry = {
         "kimi_cli": KimiCliAdapter(settings),
         "codex_cli": KimiCliAdapter(settings),
-        "openai_api": QwenApiAdapter(settings),
-        "bailian_coding_api": QwenApiAdapter(settings),
-        "bailian_api": QwenApiAdapter(settings),
-        "deepseek_api": QwenApiAdapter(settings),
+        "__default_api__": default_api_adapter,
     }
 
     app.state.settings = settings
@@ -184,7 +234,7 @@ def create_app() -> FastAPI:
                 {
                     "id": item["model_key"],
                     "object": "model",
-                    "owned_by": item["provider"]["name"],
+                    "owned_by": PUBLIC_MODEL_OWNER,
                     "display_name": item["model"]["display_name"],
                 }
                 for item in active_items
@@ -192,12 +242,15 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/admin/routes", dependencies=[Depends(require_admin_auth)])
-    async def list_routes() -> dict[str, Any]:
+    async def list_routes() -> JSONResponse:
         items = await run_in_threadpool(repository.list_route_rules)
-        return {"items": items}
+        return JSONResponse(
+            content={"items": items},
+            headers=COMPAT_DEPRECATION_HEADERS,
+        )
 
     @app.post("/admin/routes", dependencies=[Depends(require_admin_auth)])
-    async def upsert_routes(body: RouteRulesUpsertRequest) -> dict[str, Any]:
+    async def upsert_routes(body: RouteRulesUpsertRequest) -> JSONResponse:
         if not body.rules:
             raise HTTPException(status_code=400, detail="rules cannot be empty")
         if any(item.fallback_provider for item in body.rules):
@@ -205,11 +258,17 @@ def create_app() -> FastAPI:
                 status_code=400,
                 detail="fallback_provider is not supported",
             )
-        await run_in_threadpool(
-            repository.upsert_route_rules, [item.model_dump() for item in body.rules]
-        )
+        try:
+            await run_in_threadpool(
+                repository.upsert_route_rules, [item.model_dump() for item in body.rules]
+            )
+        except RepositoryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         items = await run_in_threadpool(repository.list_route_rules)
-        return {"items": items}
+        return JSONResponse(
+            content={"items": items},
+            headers=COMPAT_DEPRECATION_HEADERS,
+        )
 
     # ==========================================================================
     # Admin APIs
@@ -334,20 +393,29 @@ def create_app() -> FastAPI:
         return {"message": "route deleted"}
 
     @app.get("/admin/providers", dependencies=[Depends(require_admin_auth)])
-    async def list_providers() -> dict[str, Any]:
+    async def list_providers() -> JSONResponse:
         items = await run_in_threadpool(repository.list_provider_configs)
-        return {"items": items}
+        return JSONResponse(
+            content={"items": items},
+            headers=COMPAT_DEPRECATION_HEADERS,
+        )
 
     @app.post("/admin/providers", dependencies=[Depends(require_admin_auth)])
-    async def upsert_providers(body: ProviderConfigsUpsertRequest) -> dict[str, Any]:
+    async def upsert_providers(body: ProviderConfigsUpsertRequest) -> JSONResponse:
         if not body.providers:
             raise HTTPException(status_code=400, detail="providers cannot be empty")
-        await run_in_threadpool(
-            repository.upsert_provider_configs,
-            [item.model_dump() for item in body.providers],
-        )
+        try:
+            await run_in_threadpool(
+                repository.upsert_provider_configs,
+                [item.model_dump() for item in body.providers],
+            )
+        except RepositoryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         items = await run_in_threadpool(repository.list_provider_configs)
-        return {"items": items}
+        return JSONResponse(
+            content={"items": items},
+            headers=COMPAT_DEPRECATION_HEADERS,
+        )
 
     @app.get("/admin/calls", dependencies=[Depends(require_admin_auth)])
     async def list_calls(
@@ -405,7 +473,9 @@ def create_app() -> FastAPI:
         dependencies=[Depends(require_admin_auth)],
     )
     async def check_provider_health(provider_id: int) -> dict[str, Any]:
-        provider = await run_in_threadpool(repository.get_provider, provider_id)
+        provider = await run_in_threadpool(
+            repository.get_provider, provider_id, include_secret=True
+        )
         if not provider:
             raise HTTPException(status_code=404, detail="provider not found")
 
@@ -416,7 +486,53 @@ def create_app() -> FastAPI:
         check_result: dict[str, Any] = {}
         error_message = None
 
-        if provider["provider_type"] == "api":
+        adapter = _resolve_adapter(
+            adapter_registry,
+            provider["name"],
+            provider_type=provider.get("provider_type"),
+            provider_config=provider,
+        )
+        provider_models = await run_in_threadpool(repository.list_models, provider["id"])
+        active_models = [item for item in provider_models if bool(item.get("is_active"))]
+        probe_model = active_models[0] if active_models else None
+
+        if adapter and probe_model:
+            runtime_config = _provider_runtime_config(provider)
+            raw_timeout = runtime_config.get("timeout_sec", 20)
+            try:
+                probe_timeout_sec = int(raw_timeout)
+            except (TypeError, ValueError):
+                probe_timeout_sec = 20
+            probe_timeout_sec = max(5, min(probe_timeout_sec, 30))
+            runtime_config["timeout_sec"] = probe_timeout_sec
+            probe_payload = {
+                "model": probe_model.get("upstream_model") or probe_model["model_key"],
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+            }
+            check_result["probe_model"] = probe_model["model_key"]
+            check_result["probe_upstream_model"] = probe_payload["model"]
+            check_result["timeout_sec"] = probe_timeout_sec
+
+            try:
+                async with asyncio.timeout(probe_timeout_sec):
+                    await adapter.chat(probe_payload, runtime_config)
+                status = "healthy"
+                check_result["request_successful"] = True
+                check_result["response_type"] = "chat"
+            except asyncio.TimeoutError:
+                status = "unhealthy"
+                check_result["request_successful"] = False
+                error_message = f"timeout after {probe_timeout_sec}s"
+            except AdapterError as e:
+                status = "unhealthy"
+                check_result["request_successful"] = False
+                error_message = str(e)[:200]
+            except Exception as e:
+                status = "unhealthy"
+                check_result["request_successful"] = False
+                error_message = str(e)[:200]
+        elif provider["provider_type"] == "api":
             base_url = provider.get("base_url")
             if base_url:
                 try:
@@ -444,66 +560,12 @@ def create_app() -> FastAPI:
             else:
                 status = "unknown"
                 error_message = "no base_url configured"
+        elif not adapter:
+            status = "unknown"
+            error_message = f"no adapter for provider {provider['name']}"
         else:
-            adapter = adapter_registry.get(provider["name"])
-            if not adapter:
-                status = "unknown"
-                error_message = f"no adapter for provider {provider['name']}"
-            else:
-                provider_models = await run_in_threadpool(
-                    repository.list_models, provider["id"]
-                )
-                active_models = [
-                    item for item in provider_models if bool(item.get("is_active"))
-                ]
-                probe_model = active_models[0] if active_models else None
-                if not probe_model:
-                    status = "unknown"
-                    error_message = "no active model bound to provider"
-                else:
-                    runtime_config = provider.get("config", {}) or {}
-                    if not isinstance(runtime_config, dict):
-                        runtime_config = {}
-                    raw_timeout = runtime_config.get("timeout_sec", 20)
-                    try:
-                        probe_timeout_sec = int(raw_timeout)
-                    except (TypeError, ValueError):
-                        probe_timeout_sec = 20
-                    probe_timeout_sec = max(5, min(probe_timeout_sec, 30))
-                    runtime_config = {
-                        **runtime_config,
-                        "base_url": provider.get("base_url"),
-                        "api_key": provider.get("api_key"),
-                        "timeout_sec": probe_timeout_sec,
-                    }
-                    probe_payload = {
-                        "model": probe_model.get("upstream_model")
-                        or probe_model["model_key"],
-                        "messages": [{"role": "user", "content": "ping"}],
-                        "max_tokens": 1,
-                    }
-                    check_result["probe_model"] = probe_model["model_key"]
-                    check_result["probe_upstream_model"] = probe_payload["model"]
-                    check_result["timeout_sec"] = probe_timeout_sec
-
-                    try:
-                        async with asyncio.timeout(probe_timeout_sec):
-                            await adapter.chat(probe_payload, runtime_config)
-                        status = "healthy"
-                        check_result["request_successful"] = True
-                        check_result["response_type"] = "chat"
-                    except asyncio.TimeoutError:
-                        status = "unhealthy"
-                        check_result["request_successful"] = False
-                        error_message = f"timeout after {probe_timeout_sec}s"
-                    except AdapterError as e:
-                        status = "unhealthy"
-                        check_result["request_successful"] = False
-                        error_message = str(e)[:200]
-                    except Exception as e:
-                        status = "unhealthy"
-                        check_result["request_successful"] = False
-                        error_message = str(e)[:200]
+            status = "unknown"
+            error_message = "no active model bound to provider"
 
         latency_ms = int((time.perf_counter() - started_at) * 1000)
 
@@ -557,22 +619,23 @@ def create_app() -> FastAPI:
         }
 
         provider_config = await run_in_threadpool(
-            repository.get_provider, provider["id"]
+            repository.get_provider, provider["id"], include_secret=True
         )
         if not provider_config:
             raise HTTPException(status_code=400, detail="provider config not found")
 
-        adapter = adapter_registry.get(provider["name"])
+        adapter = _resolve_adapter(
+            adapter_registry,
+            provider["name"],
+            provider_type=provider.get("provider_type"),
+            provider_config=provider_config,
+        )
         if adapter:
             try:
                 async with asyncio.timeout(30):
                     resp = await adapter.chat(
                         test_payload,
-                        {
-                            "base_url": provider_config.get("base_url"),
-                            "api_key": provider_config.get("api_key"),
-                            "config": provider_config.get("config", {}),
-                        },
+                        _provider_runtime_config(provider_config),
                     )
                     status = "healthy"
                     check_result["request_successful"] = True
@@ -702,11 +765,6 @@ def create_app() -> FastAPI:
         for provider_name in decision.provider_chain:
             attempted_chain.append(provider_name)
 
-            adapter = adapter_registry.get(provider_name)
-            if adapter is None:
-                errors.append(f"{provider_name}: adapter is not supported")
-                continue
-
             try:
                 provider_row = await run_in_threadpool(
                     repository.get_provider_config, provider_name
@@ -722,6 +780,15 @@ def create_app() -> FastAPI:
                 continue
 
             provider_config = provider_row.get("config") or {}
+            adapter = _resolve_adapter(
+                adapter_registry,
+                provider_name,
+                provider_type=provider_row.get("provider_type"),
+                provider_config=provider_config,
+            )
+            if adapter is None:
+                errors.append(f"{provider_name}: adapter is not supported")
+                continue
 
             try:
                 if is_stream:
@@ -803,10 +870,10 @@ def create_app() -> FastAPI:
 
                 return JSONResponse(response_payload)
             except AdapterError as exc:
-                errors.append(f"{provider_name}: {exc}")
+                errors.append(f"{provider_name}: {_format_provider_error(exc)}")
             except Exception as exc:  # noqa: BLE001
                 logger.exception("provider request failed: %s", provider_name)
-                errors.append(f"{provider_name}: {exc}")
+                errors.append(f"{provider_name}: {_format_provider_error(exc)}")
 
         latency_ms = int((time.perf_counter() - started_at) * 1000)
         error_text = " | ".join(errors) if errors else "all providers failed"
@@ -820,7 +887,7 @@ def create_app() -> FastAPI:
                 "primary_provider": decision.primary_provider,
                 "fallback_provider": decision.fallback_provider,
                 "route_chain": attempted_chain,
-                "selected_provider": None,
+                "selected_provider": attempted_chain[-1] if attempted_chain else None,
                 "status": "failed",
                 "http_status": 502,
                 "error_message": error_text,

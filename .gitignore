@@ -28,6 +28,11 @@ runtime/
 changes/
 *.pid
 
+# Private overlays (keep local, do not publish)
+sql/private/
+docs/private/
+scripts/private/
+
 # Local backup files
 *.bak
 *.tmp

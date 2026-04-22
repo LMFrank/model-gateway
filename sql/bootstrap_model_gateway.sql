@@ -230,6 +230,7 @@ ON CONFLICT (provider_name) DO UPDATE SET
 -- ============================================================================
 -- Seed providers（以当前 schema 为准）
 -- ============================================================================
+-- 私有 / 内网上游请放到 sql/private/*.sql，本文件只保留可公开提交的通用 seed。
 
 INSERT INTO providers (name, display_name, provider_type, base_url, api_key, config_json, description, is_enabled)
 VALUES
@@ -297,6 +298,7 @@ INSERT INTO models (provider_id, model_key, display_name, upstream_model, is_act
 VALUES
   ((SELECT id FROM providers WHERE name = 'kimi_cli'), 'kimi-for-coding', 'Kimi for Coding', 'kimi-k2.5', TRUE, 'Kimi CLI 调用'),
   ((SELECT id FROM providers WHERE name = 'codex_cli'), 'codex-for-coding', 'Codex for Coding', 'gpt-5.3-codex', TRUE, 'Codex CLI 调用'),
+  ((SELECT id FROM providers WHERE name = 'bailian_coding_api'), 'qwen3.6-plus', 'Qwen3.6 Plus', 'qwen3.6-plus', TRUE, 'Qwen3.6 Plus - Coding Plan'),
   ((SELECT id FROM providers WHERE name = 'bailian_coding_api'), 'qwen3.5-plus', 'Qwen3.5 Plus', 'qwen3.5-plus', TRUE, 'Qwen3.5 Plus - Coding Plan'),
   ((SELECT id FROM providers WHERE name = 'bailian_coding_api'), 'qwen3-max', 'Qwen3 Max', 'qwen3-max-2026-01-23', TRUE, 'Qwen3 Max - Coding Plan'),
   ((SELECT id FROM providers WHERE name = 'bailian_coding_api'), 'qwen3-coder', 'Qwen3 Coder', 'qwen3-coder-next', TRUE, 'Qwen3 Coder - Coding Plan'),
@@ -324,6 +326,7 @@ INSERT INTO model_routes (model_key, is_enabled, priority, description)
 VALUES
   ('kimi-for-coding', TRUE, 0, 'Kimi CLI 调用'),
   ('codex-for-coding', TRUE, 0, 'Codex CLI 调用'),
+  ('qwen3.6-plus', TRUE, 0, 'Qwen3.6 Plus - Coding Plan'),
   ('qwen3.5-plus', TRUE, 0, 'Qwen3.5 Plus - Coding Plan'),
   ('qwen3-max', TRUE, 0, 'Qwen3 Max - Coding Plan'),
   ('qwen3-coder', TRUE, 0, 'Qwen3 Coder - Coding Plan'),
@@ -346,6 +349,7 @@ INSERT INTO route_rules (model_name, primary_provider, fallback_provider, is_ena
 VALUES
   ('kimi-for-coding', 'kimi_cli', NULL, TRUE, 'Kimi CLI 调用'),
   ('codex-for-coding', 'codex_cli', NULL, TRUE, 'Codex CLI 调用'),
+  ('qwen3.6-plus', 'bailian_coding_api', NULL, TRUE, 'Qwen3.6 Plus - Coding Plan'),
   ('qwen3.5-plus', 'bailian_coding_api', NULL, TRUE, 'Qwen3.5 Plus - Coding Plan'),
   ('qwen3-max', 'bailian_coding_api', NULL, TRUE, 'Qwen3 Max - Coding Plan'),
   ('qwen3-coder', 'bailian_coding_api', NULL, TRUE, 'Qwen3 Coder - Coding Plan'),

@@ -2,6 +2,10 @@
 
 本文档详细说明如何将上游应用接入 Model Gateway。
 
+如需运行模式切换、发布步骤与闭环验收清单，请同时参考：
+
+- [docs/runtime-release-sop.md](runtime-release-sop.md)
+
 ## 接入原理
 
 Model Gateway 兼容 OpenAI API 格式，任何支持 OpenAI API 的应用都可以通过修改配置接入：
@@ -13,7 +17,7 @@ Model Gateway 兼容 OpenAI API 格式，任何支持 OpenAI API 的应用都可
   MODEL=gpt-4
 
 接入后:
-  BASE_URL=http://model-gateway:8080/v1
+  BASE_URL=http://host.docker.internal:8080/v1
   API_KEY=<GATEWAY_CLIENT_TOKEN>
   MODEL=qwen3-max  # 使用 gateway 中配置的 model_key
 ```
@@ -28,6 +32,33 @@ Model Gateway 兼容 OpenAI API 格式，任何支持 OpenAI API 的应用都可
 > - 客户端调用 `/v1/*` 使用 `GATEWAY_CLIENT_TOKEN`
 > - 管理接口 `/api/*`、`/admin/*` 使用 `GATEWAY_ADMIN_TOKEN`
 > - 兼容字段 `fallback_provider` 当前保持为空，运行时只使用 `primary_provider`
+> - `/admin/providers`、`/admin/routes` 仅作为 deprecated compatibility surface 保留；新接入与日常管理应优先使用 `/api/providers`、`/api/routes`
+
+## 运行模式建议
+
+### 本地直连模式
+
+适用于需要复用宿主机网络能力的私有上游（例如零信任、专线或宿主机本地代理）：
+
+```bash
+./scripts/switch_to_local_runtime.sh
+```
+
+- 宿主机访问：`http://localhost:8080/v1`
+- Docker 业务容器访问：`http://host.docker.internal:8080/v1`
+- 私有 provider 建议放在本地 `sql/private/`、`docs/private/`、`scripts/private/` overlay 中，不要写入公共仓库
+
+### Docker 运行模式
+
+适用于纯容器化部署、上游模型可由 Docker 直接访问的场景：
+
+```bash
+./scripts/switch_to_docker_runtime.sh
+```
+
+- 宿主机访问：`http://localhost:8080/v1`
+- `frontend` 容器通过 `FRONTEND_GATEWAY_UPSTREAM=model-gateway` 自动回指 Docker 内 gateway
+- 业务容器如果统一使用 `http://host.docker.internal:8080/v1`，则无需额外改动
 
 ## 接入方式
 
@@ -39,8 +70,8 @@ Model Gateway 兼容 OpenAI API 格式，任何支持 OpenAI API 的应用都可
 
 ```bash
 # .env 或 docker-compose.yml environment
-OPENAI_API_KEY=mgw_client_a0a0f11b33884a1f187526151cdb3c75
-OPENAI_BASE_URL=http://model-gateway:8080/v1
+OPENAI_API_KEY=your-gateway-client-token
+OPENAI_BASE_URL=http://host.docker.internal:8080/v1
 OPENAI_MODEL_NAME=qwen3-max
 ```
 
@@ -50,18 +81,18 @@ OPENAI_MODEL_NAME=qwen3-max
 
 ```bash
 # Kimi Code 服务（通过 CLI）
-KIMI_CODE_API_KEY=mgw_client_a0a0f11b33884a1f187526151cdb3c75
-KIMI_CODE_BASE_URL=http://model-gateway:8080/v1
+KIMI_CODE_API_KEY=your-gateway-client-token
+KIMI_CODE_BASE_URL=http://host.docker.internal:8080/v1
 KIMI_CODE_MODEL_NAME=kimi-for-coding
 
 # Qwen Max 服务
-QWEN_MAX_API_KEY=mgw_client_a0a0f11b33884a1f187526151cdb3c75
-QWEN_MAX_BASE_URL=http://model-gateway:8080/v1
+QWEN_MAX_API_KEY=your-gateway-client-token
+QWEN_MAX_BASE_URL=http://host.docker.internal:8080/v1
 QWEN_MAX_MODEL_NAME=qwen3-max
 
 # DeepSeek 服务
-DEEPSEEK_API_KEY=mgw_client_a0a0f11b33884a1f187526151cdb3c75
-DEEPSEEK_BASE_URL=http://model-gateway:8080/v1
+DEEPSEEK_API_KEY=your-gateway-client-token
+DEEPSEEK_BASE_URL=http://host.docker.internal:8080/v1
 DEEPSEEK_MODEL_NAME=deepseek-chat
 ```
 
@@ -81,7 +112,7 @@ def get_model_config(service_name: str) -> dict:
 
 # 使用
 config = get_model_config("KIMI_CODE")
-# config = {"api_key": "mgw_client_xxx", "base_url": "http://...", "model": "kimi-for-coding"}
+# config = {"api_key": "your-gateway-client-token", "base_url": "http://...", "model": "kimi-for-coding"}
 ```
 
 #### 动态发现模型（推荐）
@@ -101,9 +132,10 @@ curl http://model-gateway:8080/v1/models \
 {
   "object": "list",
   "data": [
-    {"id": "qwen3-max", "object": "model", "owned_by": "bailian_coding_api", "display_name": "Qwen3 Max"},
-    {"id": "kimi-k2.5", "object": "model", "owned_by": "bailian_coding_api", "display_name": "Kimi K2.5"},
-    {"id": "deepseek-chat", "object": "model", "owned_by": "deepseek_api", "display_name": "DeepSeek Chat"}
+    {"id": "qwen3.6-plus", "object": "model", "owned_by": "model-gateway", "display_name": "Qwen3.6 Plus"},
+    {"id": "qwen3-max", "object": "model", "owned_by": "model-gateway", "display_name": "Qwen3 Max"},
+    {"id": "kimi-k2.5", "object": "model", "owned_by": "model-gateway", "display_name": "Kimi K2.5"},
+    {"id": "deepseek-chat", "object": "model", "owned_by": "model-gateway", "display_name": "DeepSeek Chat"}
   ]
 }
 ```
@@ -187,13 +219,13 @@ model:
 [
   {
     "service_name": "QWEN_MAX",
-    "api_key": "mgw_client_xxx",
+    "api_key": "your-gateway-client-token",
     "base_url": "http://model-gateway:8080/v1",
     "model_name": "qwen3-max"
   },
   {
     "service_name": "DEEPSEEK",
-    "api_key": "mgw_client_xxx",
+    "api_key": "your-gateway-client-token",
     "base_url": "http://model-gateway:8080/v1",
     "model_name": "deepseek-chat"
   }
@@ -206,7 +238,7 @@ model:
 from openai import OpenAI
 
 client = OpenAI(
-    api_key="mgw_client_a0a0f11b33884a1f187526151cdb3c75",
+    api_key="your-gateway-client-token",
     base_url="http://model-gateway:8080/v1"
 )
 
@@ -234,7 +266,7 @@ services:
     image: your-app
     environment:
       - OPENAI_BASE_URL=http://model-gateway:8080/v1
-      - OPENAI_API_KEY=mgw_client_xxx
+      - OPENAI_API_KEY=your-gateway-client-token
     networks:
       - app-network
 
@@ -275,6 +307,7 @@ services:
 
 | model_key | 说明 | 计费方式 |
 |-----------|------|----------|
+| `qwen3.6-plus` | Qwen3.6 Plus | 百炼 Coding Plan |
 | `qwen3.5-plus` | Qwen3.5 Plus | 百炼 Coding Plan |
 | `qwen3-max` | Qwen3 Max | 百炼 Coding Plan |
 | `qwen3-coder` | Qwen3 Coder | 百炼 Coding Plan |
