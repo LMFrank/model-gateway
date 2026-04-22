@@ -86,7 +86,7 @@ INSERT INTO route_rules (model_name, primary_provider, fallback_provider, is_ena
 VALUES
   ('kimi-for-coding', 'kimi_cli', NULL, TRUE, 'Kimi 主通道（无回退）'),
   ('codex-for-coding', 'codex_cli', NULL, TRUE, 'Codex 主通道（无回退）'),
-  ('qwen3.5-plus', 'qwen_api', NULL, TRUE, 'Qwen 直连')
+  ('qwen3.6-plus', 'qwen_api', NULL, TRUE, 'Qwen 直连')
 ON CONFLICT (model_name) DO UPDATE SET
   primary_provider = EXCLUDED.primary_provider,
   fallback_provider = EXCLUDED.fallback_provider,
@@ -132,7 +132,7 @@ VALUES
       'base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1',
       'chat_endpoint', '/chat/completions',
       'api_key', 'REPLACE_WITH_REAL_KEY',
-      'upstream_model', 'qwen3.5-plus',
+      'upstream_model', 'qwen3.6-plus',
       'timeout_sec', 120
     ),
     TRUE
