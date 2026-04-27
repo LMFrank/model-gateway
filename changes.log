@@ -445,3 +445,199 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Files: changes.log
 - Verify: N/A（开始记录）
 - Next: 盘点当前工作树，区分本轮收口相关文件与其他历史未提交改动。
+
+## [2026-04-22 15:46:30  +0:800] [Codex] [task-final-doc-consistency-audit] [START]
+- Intent: 对 README/docs/关键脚本再做一次最终文档一致性巡检，确认是否还残留旧 provider 口径、旧 runtime 叙事或接口说明漂移。
+- Scope: 只读扫描 README、docs、关键脚本与测试示例；若发现明确错口径则做最小文档修正；不改业务逻辑。
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 全量 grep 旧关键词并人工复核命中项。
+
+## [2026-04-22 15:46:42  +0:800] [Codex] [task-final-doc-consistency-audit] [DONE]
+- Intent: 对 README/docs/关键脚本再做一次最终文档一致性巡检，确认是否还残留旧 provider 口径、旧 runtime 叙事或接口说明漂移。
+- Scope: 已完成只读巡检；未发现需要继续修改的公共文档错误口径，因此未改业务逻辑与文档内容。
+- Files: changes.log
+- Verify: `rg -n "qizhi|Kimi-K2.6|bailian_coding_api|deepseek_api|qwen_api|QwenApiAdapter|QWEN_TIMEOUT_SEC|fallback_provider|model-gateway:8080/v1|deprecated compatibility surface|host\.docker\.internal|sql/private|/admin/providers|/admin/routes|/api/providers|/api/routes|qwen3\.5-plus|qwen3\.6-plus|mgw_client_|your-gateway-client-token" README.md docs scripts tests app -g '!frontend/**'`；人工复核命中项，确认公共文档中的 `host.docker.internal` / `model-gateway:8080/v1` 示例分别对应跨 compose 与同网络 compose 场景，属预期；公共 README/docs 中未发现私有 provider 泄漏或主入口口径反转。
+- Next: None
+
+## [2026-04-23 17:46:00] [Codex] [reduce-qizhi-transient-connect-errors] [START]
+- Intent: 在不配置 fallback 的前提下，降低 qizhi/Kimi OpenAPI 的瞬时 ConnectError 对单次请求的影响。
+- Scope: 聚焦 openai_compatible adapter 的瞬时网络重试；不改路由策略、不引入 provider fallback。
+- Files: changes.log
+- Verify: 待补充。
+- Next: 先给 openai_compatible adapter 增加有限次连接重试，再重启本地 gateway 并用 Kimi 模型请求验证。
+
+## [2026-04-23 18:05:10] [Codex] [reduce-qizhi-transient-connect-errors] [DONE]
+- Intent: 在不配置 fallback 的前提下，降低 qizhi/Kimi OpenAPI 的瞬时 ConnectError 对单次请求的影响。
+- Scope: 已为 openai_compatible adapter 增加有限次连接重试；未改路由策略、未引入 provider fallback。
+- Files: changes.log, app/adapters/openai_compatible.py, tests/test_openai_compatible_adapter.py
+- Verify: `pytest -q tests/test_openai_compatible_adapter.py tests/test_main_helpers.py`（12 passed）；`python -m py_compile app/adapters/openai_compatible.py tests/test_openai_compatible_adapter.py`（pass）；`git diff --check app/adapters/openai_compatible.py tests/test_openai_compatible_adapter.py`（pass）；重启本地 gateway 后 `POST /api/health/check/provider/9` 返回 healthy；直接调用 `POST /v1/chat/completions` 使用 `Kimi-K2.6` 连续成功；StockAgents 触发 `macro_20260423_180321_41a3e0ff` 后，gateway `/admin/calls?task_id=macro_20260423_180321_41a3e0ff` 记录为 `selected_provider=qizhi`、`status=success`、无 fallback。
+- Next: None
+
+## [2026-04-23 18:09:50] [Codex] [smooth-local-model-gateway-pg-host-startup] [START]
+- Intent: 收顺本地 model-gateway 启动环境，让非 Docker 直跑时不再因为 .env 里的 PG_HOST=pg 导致数据库连接失败。
+- Scope: 聚焦 model-gateway 本地数据库主机解析与启动兼容；不改模型路由与 provider 逻辑。
+- Files: changes.log
+- Verify: 待补充。
+- Next: 先检查 repository 的数据库连接构造，再做最小兼容修复并验证本地 uvicorn 直跑。
+
+## [2026-04-23 18:12:30] [Codex] [smooth-local-model-gateway-pg-host-startup] [DONE]
+- Intent: 收顺本地 model-gateway 启动环境，让非 Docker 直跑时不再因为 .env 里的 PG_HOST=pg 导致数据库连接失败。
+- Scope: 已为 PostgresRepository 增加 `pg -> 127.0.0.1` 本地兼容回退，并补充测试；未改模型路由与 provider 逻辑。
+- Files: changes.log, app/repository.py, tests/test_repository_pg_host_fallback.py, app/adapters/openai_compatible.py, tests/test_openai_compatible_adapter.py
+- Verify: `pytest -q tests/test_repository_pg_host_fallback.py tests/test_openai_compatible_adapter.py tests/test_main_helpers.py`（15 passed）；`python -m py_compile app/repository.py tests/test_repository_pg_host_fallback.py app/adapters/openai_compatible.py tests/test_openai_compatible_adapter.py`（pass）；`git diff --check app/repository.py tests/test_repository_pg_host_fallback.py app/adapters/openai_compatible.py tests/test_openai_compatible_adapter.py`（pass）；直接以 `.env` 原样启动 `python -m uvicorn app.main:app --host 0.0.0.0 --port 8080` 后，`/admin/calls`、`/api/health/check/provider/9` 与 `Kimi-K2.6` 请求均可正常返回。
+- Next: None
+
+## [2026-04-23 18:15:20] [Codex] [document-local-runtime-and-stockagents-routing] [START]
+- Intent: 补一份简短运维说明，明确本地 gateway / Docker / StockAgents runtime 的关系，减少后续对 PG_HOST、本地直跑与 Kimi 路由的混淆。
+- Scope: 仅更新 README/SOP 文档；不改业务逻辑。
+- Files: changes.log
+- Verify: 待补充。
+- Next: 先把 README 配置说明与 runtime SOP 中的本地直跑注意事项补齐，再做文本一致性复核。
+
+## [2026-04-23 18:17:10] [Codex] [document-local-runtime-and-stockagents-routing] [DONE]
+- Intent: 补一份简短运维说明，明确本地 gateway / Docker / StockAgents runtime 的关系，减少后续对 PG_HOST、本地直跑与 Kimi 路由的混淆。
+- Scope: 已更新 README 与 runtime SOP 的本地直跑说明、PG_HOST 兼容说明与 StockAgents→gateway→Kimi 验证步骤；未改业务逻辑。
+- Files: changes.log, README.md, docs/runtime-release-sop.md
+- Verify: `python -m py_compile app/repository.py app/adapters/openai_compatible.py`（pass）；`git diff --check README.md docs/runtime-release-sop.md app/repository.py tests/test_repository_pg_host_fallback.py app/adapters/openai_compatible.py tests/test_openai_compatible_adapter.py`（pass）；`rg -n "pg -> 127.0.0.1|selected_provider=qizhi|model_name=Kimi-K2.6|不出现 fallback provider" README.md docs/runtime-release-sop.md` 命中预期文案。
+- Next: None
+
+## [2026-04-23 20:48:11] [Codex] [install-model-gateway-launchd-service] [START]
+- Intent: 将 model-gateway 本地 runtime 安装为 macOS launchd 用户服务，避免会话断开后 tmux 进程消失导致模型调用失败。
+- Scope: 聚焦 model-gateway 本地服务安装、启动与 StockAgents 容器连通性验证；不修改业务代码。
+- Files: changes.log
+- Verify: 待补充。
+- Next: 执行 install_local_gateway_service.sh，验证 launchctl 状态、8080/8620 可用性以及 stockagents-core 访问 /v1/models。
+
+## [2026-04-23 20:50:06] [Codex] [install-model-gateway-launchd-service] [DONE]
+- Intent: 将 model-gateway 本地 runtime 安装为 macOS launchd 用户服务，避免会话断开后 tmux 进程消失导致模型调用失败。
+- Scope: 已安装 launchd 用户服务并完成 KeepAlive 复活验证；StockAgents 生产容器到 model-gateway 的 8080/v1 调用链路正常。
+- Files: changes.log, ~/Library/LaunchAgents/ai.model-gateway.local.plist, ~/.local/bin/model-gateway-local-runner.sh, ~/.local/share/model-gateway/local-gateway.env
+- Verify: `./scripts/install_local_gateway_service.sh` 安装 launchd 用户服务 `ai.model-gateway.local`；`launchctl print gui/$(id -u)/ai.model-gateway.local` 显示 `state = running`、`properties = keepalive | runatload`、`pid = 92701`、`runs = 3`；手动 kill 旧 PID 59882 后 launchd 自动拉起新 PID 92701，`curl http://127.0.0.1:8080/healthz` 返回 `{"status":"ok"}`；`curl -I http://127.0.0.1:8620` 返回 200；`docker exec stockagents-core` 访问 `http://host.docker.internal:8080/healthz` 和 `/v1/models` 均返回 200。
+- Next: None
+
+## [2026-04-23 20:57:01] [Codex] [repair-local-observability-chain] [START]
+- Intent: 排查并修复切换到本地部署后 model-gateway 在可观测系统中的 metrics/logs 采集链路。
+- Scope: 聚焦本地 runtime 与 monitor 采集衔接；允许调整本地运行脚本、监控配置与文档，不改模型路由业务逻辑。
+- Files: changes.log
+- Verify: 待补充。
+- Next: 先确认 Prometheus/Loki 当前失败点，再补本地模式的目标注册与日志采集并做闭环验证。
+
+## [2026-04-23 21:06:05] [Codex] [repair-local-observability-chain] [DONE]
+- Intent: 排查并修复切换到本地部署后 model-gateway 在可观测系统中的 metrics/logs 采集链路。
+- Scope: 已补本地 runtime 到 monitor 的 Prometheus file_sd 注册、统一本地日志落盘，并更新运行说明；未改模型路由业务逻辑。
+- Files: changes.log, README.md, docs/runtime-release-sop.md, scripts/start_local_gateway_background.sh, scripts/install_local_gateway_service.sh, scripts/switch_to_local_runtime.sh, scripts/switch_to_docker_runtime.sh, scripts/sync_monitor_local_observability.sh
+- Verify: `bash -n scripts/start_local_gateway_background.sh scripts/install_local_gateway_service.sh scripts/sync_monitor_local_observability.sh scripts/switch_to_local_runtime.sh scripts/switch_to_docker_runtime.sh`（pass）；`git diff --check -- README.md docs/runtime-release-sop.md scripts/start_local_gateway_background.sh scripts/install_local_gateway_service.sh scripts/sync_monitor_local_observability.sh scripts/switch_to_local_runtime.sh scripts/switch_to_docker_runtime.sh changes.log`（pass）；执行 `./scripts/install_local_gateway_service.sh` 后本地 gateway 健康；Prometheus `up{service="model-gateway-api"}` 返回 `1`，instance=`host.docker.internal:8080`；Loki `query_range {service="model-gateway-api",runtime="local"}` 返回本地 gateway 日志。
+- Next: None
+
+## [2026-04-23 21:32:08] [Codex] [bump-release-and-sync-docs] [START]
+- Intent: 更新 model-gateway release 版本，并同步可观测/本地 runtime 相关文档口径。
+- Scope: 聚焦版本号、README/SOP 与 release 文案；不新增业务逻辑改动。
+- Files: changes.log
+- Verify: 待补充。
+- Next: 先把版本号与版本历史补到位，再跑文档/配置一致性检查。
+
+## [2026-04-23 21:33:46] [Codex] [bump-release-and-sync-docs] [DONE]
+- Intent: 更新 model-gateway release 版本，并同步可观测/本地 runtime 相关文档口径。
+- Scope: 已将 model-gateway 版本更新到 v0.1.7，并同步 README 版本历史与运行时版本；未新增业务逻辑改动。
+- Files: changes.log, README.md, app/main.py
+- Verify: `python -m py_compile app/main.py`（pass）；重装本地 launchd 服务后 `curl http://127.0.0.1:8080/openapi.json` 返回 `info.version=0.1.7`，`curl http://127.0.0.1:8080/healthz` 返回 ok；`git diff --check -- README.md app/main.py docs/runtime-release-sop.md changes.log scripts/install_local_gateway_service.sh scripts/start_local_gateway_background.sh scripts/switch_to_docker_runtime.sh scripts/switch_to_local_runtime.sh scripts/sync_monitor_local_observability.sh`（pass）。
+- Next: None
+
+## [2026-04-27 14:20:00 +0800] [Codex] [task-investigate-missing-glm51fp8-usage-stats] [START]
+- Intent: 排查管理后台使用量统计里为何没有显示 glm5.1-fp8
+- Scope: 仅读取前后端代码、配置、测试与必要运行数据，定位统计缺失原因；不改动业务代码
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 检查 usage 聚合口径、模型展示映射与 glm5.1-fp8 的实际落库字段是否一致
+
+## [2026-04-27 14:29:00 +0800] [Codex] [task-investigate-missing-glm51fp8-usage-stats] [DONE]
+- Intent: 排查管理后台使用量统计里为何没有显示 glm5.1-fp8
+- Scope: 已只读核对前后端聚合逻辑、数据库模型配置与最近 call_logs 落库情况；未改动业务代码
+- Files: changes.log
+- Verify: `rg -n "glm|fp8|usage|model_name" app frontend sql` 显示仓内仅存在 `glm-5/glm-4.7`，无 `glm5.1-fp8`；`python` 直连 PostgreSQL 查询显示 models/model_routes 只有 `glm-5`(active) 与 `glm-4.7`(disabled)，`2026-04-21..2026-04-27` 的 call_logs 仅有 `qwen3.6-plus`/`Kimi-K2.6`/`kimi-k2.5` 三个 model_name；全库仅 1 条 `glm-5` 调用记录（2026-03-31）
+- Next: None
+
+## [2026-04-27 14:36:00 +0800] [Codex] [task-configure-qb-glm51-provider] [START]
+- Intent: 根据提供的 OpenAI-compatible 参数配置 qb-glm51 provider 与 glm-5.1-fp8 模型路由
+- Scope: 新增私有 seed SQL 并落库启用 provider/model/route，验证本地 gateway 可识别并转发；不改动其他模型逻辑
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 先补 qb-glm51 的 seed SQL，再执行到当前数据库并做查询与接口验证
+
+## [2026-04-27 14:41:00 +0800] [Codex] [task-configure-qb-glm51-provider] [DONE]
+- Intent: 根据提供的 OpenAI-compatible 参数配置 qb-glm51 provider 与 glm-5.1-fp8 模型路由
+- Scope: 已新增私有 seed SQL、写入当前数据库并验证本地 gateway 可列出并成功调用 glm-5.1-fp8；未改动其他模型逻辑
+- Files: changes.log, sql/private/qb_glm51.seed.sql
+- Verify: 执行 `sql/private/qb_glm51.seed.sql` 到当前 PostgreSQL 后查询返回 `qb-glm51` + `glm-5.1-fp8`；`GET /v1/models` 包含 `glm-5.1-fp8`；`POST /v1/chat/completions` 以 `glm-5.1-fp8` 调用返回 200；`GET /admin/usage/summary?date_from=2026-04-27&date_to=2026-04-27` 已出现 `glm-5.1-fp8` 与 provider `qb-glm51` 统计
+- Next: None
+
+## [2026-04-27 14:46:00 +0800] [Codex] [task-harden-qb-glm51-secret-seed] [START]
+- Intent: 收口 qb-glm51 私有 seed 中的明文密钥，保留可复用配置方式但避免把新 provider 密钥继续固化到文件里
+- Scope: 仅调整 qb-glm51 私有 seed 的注入方式与最小说明，不改业务路由逻辑与现有数据库中的已生效配置
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 将 qb_glm51.seed.sql 改成变量注入形式，并验证脚本在带变量时可正常执行
+
+## [2026-04-27 14:49:00 +0800] [Codex] [task-harden-qb-glm51-secret-seed] [DONE]
+- Intent: 收口 qb-glm51 私有 seed 中的明文密钥，保留可复用配置方式但避免把新 provider 密钥继续固化到文件里
+- Scope: 已将 qb-glm51 私有 seed 改为 `psql -v qb_glm51_api_key=...` 变量注入；未改业务路由逻辑与当前数据库中已生效配置
+- Files: changes.log, sql/private/qb_glm51.seed.sql
+- Verify: 使用变量替换后的 SQL 重新执行到当前 PostgreSQL 成功，查询仍返回 `qb-glm51` + `glm-5.1-fp8` + 启用路由；seed 文件中已无明文 API Key
+- Next: None
+
+## [2026-04-27 14:52:00 +0800] [Codex] [task-harden-qizhi-secret-seed] [START]
+- Intent: 按 qb-glm51 的方式继续收口 qizhi 私有 seed 中的明文密钥，统一私有 provider 的安全注入方式
+- Scope: 仅调整 qizhi 私有 seed 的注入方式与执行说明，不改业务路由逻辑与当前数据库中已生效配置
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 将 qizhi.seed.sql 改成变量注入形式，并验证带变量执行后仍可正常落库
+
+## [2026-04-27 14:54:00 +0800] [Codex] [task-harden-qizhi-secret-seed] [DONE]
+- Intent: 按 qb-glm51 的方式继续收口 qizhi 私有 seed 中的明文密钥，统一私有 provider 的安全注入方式
+- Scope: 已将 qizhi 私有 seed 改为 `psql -v qizhi_api_key=...` 变量注入；未改业务路由逻辑与当前数据库中已生效配置
+- Files: changes.log, sql/private/qizhi.seed.sql
+- Verify: 使用变量替换后的 SQL 重新执行到当前 PostgreSQL 成功，查询仍返回 `qizhi` + `Kimi-K2.6` + 启用路由；seed 文件中已无明文 API Key
+- Next: None
+
+## [2026-04-27 14:58:00 +0800] [Codex] [task-document-private-seed-variable-injection] [START]
+- Intent: 补充私有 provider seed 的变量注入示例，避免后续继续把 API Key 误写进本地 SQL 文件
+- Scope: 仅更新 README 与运维/集成文档示例；不改业务逻辑与数据库配置
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 在私有 overlay 说明附近补充 psql -v 变量注入示例，并做文档一致性检查
+
+## [2026-04-27 15:01:00 +0800] [Codex] [task-document-private-seed-variable-injection] [DONE]
+- Intent: 补充私有 provider seed 的变量注入示例，避免后续继续把 API Key 误写进本地 SQL 文件
+- Scope: 已在 README、集成文档与运行 SOP 的私有 overlay 说明附近补充 `psql -v` 示例；未改业务逻辑与数据库配置
+- Files: changes.log, README.md, docs/integration.md, docs/runtime-release-sop.md
+- Verify: `git diff --check -- README.md docs/integration.md docs/runtime-release-sop.md sql/private/qizhi.seed.sql sql/private/qb_glm51.seed.sql changes.log`（pass）；`rg -n "变量注入密钥|私有 provider seed|qizhi_api_key|qb_glm51_api_key" README.md docs/integration.md docs/runtime-release-sop.md sql/private` 命中新增文档与 seed 变量占位
+- Next: None
+
+## [2026-04-27 15:04:00 +0800] [Codex] [task-scan-private-secret-residue] [START]
+- Intent: 继续全仓扫描私有 seed / 脚本 / 文档中的明文密钥残留与注入方式不一致点
+- Scope: 先做只读扫描；若发现明确可安全修正的私有示例或脚本，再做最小修复；不改业务逻辑
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 用关键词检索 SQL/docs/scripts/.env 示例中的疑似明文密钥、Bearer token、sk- 前缀与兼容注入方式差异
+
+## [2026-04-27 15:08:00 +0800] [Codex] [task-scan-private-secret-residue] [DONE]
+- Intent: 继续全仓扫描私有 seed / 脚本 / 文档中的明文密钥残留与注入方式不一致点
+- Scope: 已完成只读扫描，并顺手修正文档中新引入的私有 provider 名称泄漏；未改业务逻辑
+- Files: changes.log, README.md, docs/integration.md, docs/runtime-release-sop.md
+- Verify: `pytest -q tests/test_public_artifacts.py`（3 passed）；针对 README/docs/scripts/sql/bootstrap 的私有 provider/域名/API key 检索无命中；`git diff --check -- README.md docs/integration.md docs/runtime-release-sop.md sql/private/qizhi.seed.sql sql/private/qb_glm51.seed.sql changes.log tests/test_public_artifacts.py`（pass）
+- Next: None
+
+## [2026-04-27 15:13:00 +0800] [Codex] [task-release-v0-1-8] [START]
+- Intent: 更新 model-gateway release 到新版本，统一前后端版本号与 README 版本历史，并完成提交打 tag
+- Scope: 聚焦版本号、release 文案、必要校验与 git tag；不额外改业务逻辑
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 先把版本从 v0.1.7 提升到 v0.1.8，并检查前端显示版本与 README 是否一致
+
+## [2026-04-27 15:18:00 +0800] [Codex] [task-release-v0-1-8] [DONE]
+- Intent: 更新 model-gateway release 到新版本，统一前后端版本号与 README 版本历史，并完成提交打 tag
+- Scope: 已完成 v0.1.8 版本同步、文档更新、缓存清理、测试校验与 git 提交/标签；未额外改业务逻辑
+- Files: changes.log, README.md, app/main.py, frontend/package.json, frontend/package-lock.json, frontend/src/App.vue, app/adapters/openai_compatible.py, app/repository.py, docs/integration.md, docs/runtime-release-sop.md, scripts/install_local_gateway_service.sh, scripts/start_local_gateway_background.sh, scripts/switch_to_docker_runtime.sh, scripts/switch_to_local_runtime.sh, scripts/sync_monitor_local_observability.sh, tests/test_openai_compatible_adapter.py, tests/test_repository_pg_host_fallback.py
+- Verify: `pytest -q`=42 passed；`cd frontend && npm run lint && npm run type-check && npm run build`=0；`pytest -q tests/test_public_artifacts.py`=3 passed；`git diff --check`=pass；`git tag -n | grep v0.1.8`=已创建后补验
+- Next: None

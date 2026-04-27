@@ -1,4 +1,4 @@
-# Model Gateway v0.1.6
+# Model Gateway v0.1.8
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/downloads/)
@@ -6,7 +6,7 @@
 
 **OpenAI 兼容的 LLM 网关，统一管理多个 Provider，将 CLI 工具封装为 API。**
 
-**当前版本**: `v0.1.6`（2026-04-10）
+**当前版本**: `v0.1.8`（2026-04-27）
 
 > ⚠️ **使用提醒**: 使用本项目时请遵守各模型官方的服务条款和使用规则。
 
@@ -146,6 +146,7 @@ psql -h <pg-host> -U <pg-admin-user> -d postgres \
    > 说明：`launchd` 常驻服务当前仅作为实验性能力保留。
    > 对依赖宿主机网络边界的私有上游，当前稳定通过完整验收的是 `tmux` 本地模式。
    > 因此 `./scripts/switch_to_local_runtime.sh` 默认仍回到该模式。
+   > 本地模式会尝试自动把 Prometheus target 写到 monitor 仓库的 `app/collector/file_sd/model-gateway-local.json`，并把 stdout/stderr 追加到 `.omx/logs/launchd-local-gateway*.log` 供 Promtail 采集。
 
 2. **Docker 运行模式**
    - 适用于上游模型可由 Docker 直接访问的场景
@@ -160,6 +161,14 @@ psql -h <pg-host> -U <pg-admin-user> -d postgres \
 - Docker 业务容器建议使用 `http://host.docker.internal:8080/v1`
 - `frontend` 会通过 `FRONTEND_GATEWAY_UPSTREAM` 在 `host.docker.internal` 与 `model-gateway` 间切换
 - 私有 provider / 文档 / 验收脚本建议放到本地 `sql/private/`、`docs/private/`、`scripts/private/` overlay，并由 `.gitignore` 排除
+
+私有 provider seed 建议使用 `psql -v` 注入密钥，不要把真实 API Key 写进 SQL 文件，例如：
+
+```bash
+psql "postgresql://<user>:<pass>@<host>:<port>/<db>" \
+  -v private_provider_api_key='REPLACE_WITH_REAL_KEY' \
+  -f sql/private/private_provider.seed.sql
+```
 
 ### 一键切换 / 验收
 
@@ -233,6 +242,12 @@ docker compose up -d --build
 - Grafana: `http://localhost:3000`
 - Prometheus targets 中的 `model-gateway-api`
 - Loki 中 `service=model-gateway-api|model-gateway-ui` 的日志
+
+> 本地直连补充：
+>
+> - Docker runtime 下，monitor 通过 Docker labels + 网络直接采集 `model-gateway` 容器
+> - 本地 runtime 下，`./scripts/switch_to_local_runtime.sh` / `./scripts/install_local_gateway_service.sh` 会尝试自动写入 monitor 的 `file_sd` target
+> - 若 monitor repo 不在默认位置，可预先设置 `MONITOR_FILE_SD_DIR=/path/to/monitor/app/collector/file_sd`
 
 ## 使用示例
 
@@ -325,6 +340,12 @@ OPENAI_API_KEY=your-gateway-token
 | `PG_USER` | PostgreSQL 用户 | postgres |
 | `PG_PASSWORD` | PostgreSQL 密码 | - |
 | `PG_DATABASE` | PostgreSQL 数据库 | model_gateway |
+
+> 本地直跑补充：
+>
+> - Docker 场景常把 `PG_HOST` 设成 `pg`
+> - 宿主机直接运行 `python -m uvicorn app.main:app --port 8080` 时，仓库现在会自动按 `pg -> 127.0.0.1` 再尝试一次
+> - 因此本地直跑通常不需要手工改 `.env`；只有数据库既不在 `pg` 也不在本机 `127.0.0.1` 时，才需要显式覆写 `PG_HOST`
 
 ### 多项目接入
 
@@ -504,6 +525,8 @@ API Key 存储在数据库，建议：
 
 ## 版本历史
 
+- `v0.1.8` (2026-04-27): 收口私有 provider seed 的明文密钥，统一改为 `psql -v` 变量注入；补充私有 overlay 文档示例；新增 OpenAI 兼容 adapter 瞬时连接重试测试与本地 `PG_HOST=pg -> 127.0.0.1` 回退测试；同步前后端版本号与公开文档去私有化校验
+- `v0.1.7` (2026-04-23): 增加 OpenAI 兼容 adapter 的瞬时连接重试；补齐本地直跑 `PG_HOST=pg -> 127.0.0.1` 兼容；新增 launchd 本地常驻服务与 monitor file_sd / 本地日志采集衔接；同步 README 与 runtime SOP 的本地部署/可观测说明
 - `v0.1.6` (2026-04-10): 补齐 admin/client Bearer 鉴权；新增 client-safe `/v1/models`；provider secret 默认脱敏；新增 `sql/bootstrap_model_gateway.sql` 并完成空库 bootstrap smoke 验证；移除 runtime fallback 语义
 - `v0.1.5` (2026-04-08): 同步百炼 Coding Plan 的 Qwen 模型配置（新增 `qwen3-coder-plus`）；新增幂等迁移脚本 `v0.3.1`；完成生产环境迁移与接口实测验证
 - `v0.1.4` (2026-04-08): 完成健康检查交互优化（显示进行中与状态中文化）；补齐前端 ESLint 配置；补齐本地测试依赖并完成生产链路验证

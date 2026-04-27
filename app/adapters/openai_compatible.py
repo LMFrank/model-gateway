@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -29,6 +30,9 @@ ALLOWED_CHAT_FIELDS = {
 
 
 class OpenAICompatibleAdapter:
+    DEFAULT_CONNECT_RETRIES = 2
+    DEFAULT_RETRY_BACKOFF_SEC = 0.5
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
@@ -39,8 +43,13 @@ class OpenAICompatibleAdapter:
             payload, provider_config, stream=False
         )
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(url, headers=headers, json=body)
+        response = await self._post_with_connect_retry(
+            url,
+            headers=headers,
+            body=body,
+            timeout=timeout,
+            provider_config=provider_config,
+        )
 
         if response.status_code >= 400:
             raise AdapterError(
@@ -133,3 +142,38 @@ class OpenAICompatibleAdapter:
             )
         )
         return url, headers, body, timeout
+
+    async def _post_with_connect_retry(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        body: dict[str, Any],
+        timeout: float,
+        provider_config: dict[str, Any],
+    ) -> httpx.Response:
+        retries = int(
+            provider_config.get("connect_retries", self.DEFAULT_CONNECT_RETRIES)
+            or self.DEFAULT_CONNECT_RETRIES
+        )
+        backoff_sec = float(
+            provider_config.get("retry_backoff_sec", self.DEFAULT_RETRY_BACKOFF_SEC)
+            or self.DEFAULT_RETRY_BACKOFF_SEC
+        )
+        max_attempts = max(1, retries + 1)
+        last_error: httpx.HTTPError | None = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    return await client.post(url, headers=headers, json=body)
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                last_error = exc
+                if attempt >= max_attempts:
+                    break
+                await asyncio.sleep(backoff_sec * attempt)
+
+        raise AdapterError(
+            "openai-compatible upstream connect failed "
+            f"after {max_attempts} attempts: {last_error.__class__.__name__ if last_error else 'unknown'}"
+        )

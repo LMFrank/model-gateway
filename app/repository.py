@@ -27,16 +27,31 @@ class PostgresRepository:
         )
 
     def _get_conn(self) -> psycopg.Connection:
-        return psycopg.connect(
-            host=self.settings.pg_host,
-            port=self.settings.pg_port,
-            user=self.settings.pg_user,
-            password=self.settings.pg_password,
-            dbname=self.settings.pg_database,
-            connect_timeout=self.settings.pg_connect_timeout,
-            row_factory=dict_row,
-            autocommit=True,
-        )
+        last_error: psycopg.Error | None = None
+        for host in self._candidate_hosts():
+            try:
+                return psycopg.connect(
+                    host=host,
+                    port=self.settings.pg_port,
+                    user=self.settings.pg_user,
+                    password=self.settings.pg_password,
+                    dbname=self.settings.pg_database,
+                    connect_timeout=self.settings.pg_connect_timeout,
+                    row_factory=dict_row,
+                    autocommit=True,
+                )
+            except psycopg.OperationalError as exc:
+                last_error = exc
+                continue
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("postgres connection candidates exhausted")
+
+    def _candidate_hosts(self) -> list[str]:
+        host = str(self.settings.pg_host or "").strip() or "127.0.0.1"
+        if host != "pg":
+            return [host]
+        return ["pg", "127.0.0.1"]
 
     @staticmethod
     def _json_load(value: Any) -> Any:

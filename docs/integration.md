@@ -48,6 +48,14 @@ Model Gateway 兼容 OpenAI API 格式，任何支持 OpenAI API 的应用都可
 - Docker 业务容器访问：`http://host.docker.internal:8080/v1`
 - 私有 provider 建议放在本地 `sql/private/`、`docs/private/`、`scripts/private/` overlay 中，不要写入公共仓库
 
+私有 seed 推荐通过 `psql -v` 注入密钥，例如：
+
+```bash
+psql "postgresql://<user>:<pass>@<host>:<port>/<db>" \
+  -v private_provider_api_key='REPLACE_WITH_REAL_KEY' \
+  -f sql/private/private_provider.seed.sql
+```
+
 ### Docker 运行模式
 
 适用于纯容器化部署、上游模型可由 Docker 直接访问的场景：

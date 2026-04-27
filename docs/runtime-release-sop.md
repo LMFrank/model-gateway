@@ -20,12 +20,21 @@
 - 私有 / 专线 / 零信任上游只能由宿主机直接访问
 - 这类私有配置建议放在本地 `sql/private/`、`docs/private/`、`scripts/private/` overlay 中
 
+私有 provider seed 一律用变量注入密钥，例如：
+
+```bash
+psql "postgresql://<user>:<pass>@<host>:<port>/<db>" \
+  -v private_provider_api_key='REPLACE_WITH_REAL_KEY' \
+  -f sql/private/private_provider.seed.sql
+```
+
 特点：
 
 - 实际 gateway 主进程运行在宿主机
 - 对外端口仍为 `localhost:8080`
 - 前端容器通过 `host.docker.internal:8080` 访问宿主机 gateway
 - StockAgents 容器通过 `host.docker.internal:8080/v1` 访问宿主机 gateway
+- 若 `.env` 里沿用 Docker 口径 `PG_HOST=pg`，本地直跑现在会自动回退尝试 `127.0.0.1`，避免因宿主机无法解析 `pg` 而启动失败
 
 切换命令：
 
@@ -53,6 +62,7 @@
 - 当前它仅作为**实验性能力**保留
 - 对依赖宿主机网络边界的私有上游，当前稳定通过完整验收的是 **tmux 本地模式**
 - 因此日常切换建议仍使用 `./scripts/switch_to_local_runtime.sh`
+- 本地模式会尝试自动写入 monitor 的 `app/collector/file_sd/model-gateway-local.json`，并把 gateway stdout/stderr 追加到 `.omx/logs/launchd-local-gateway*.log` 供 Promtail 采集；若 monitor repo 不在默认位置，可预先设置 `MONITOR_FILE_SD_DIR`
 
 切换后检查：
 
@@ -61,6 +71,29 @@ tmux ls | grep model-gateway-local
 curl http://localhost:8080/healthz
 docker ps | grep model-gateway-ui
 ```
+
+如果要验证 **StockAgents → 本地 gateway → 私有上游模型** 实际链路，可追加：
+
+```bash
+curl -H "Authorization: Bearer $GATEWAY_ADMIN_TOKEN" \
+  "http://localhost:8080/admin/calls?limit=5"
+
+cd ../StockAgents
+curl -X POST http://127.0.0.1:8501/api/macro/trigger
+```
+
+然后用 task_id 回查：
+
+```bash
+curl -H "Authorization: Bearer $GATEWAY_ADMIN_TOKEN" \
+  "http://localhost:8080/admin/calls?task_id=<macro_task_id>&limit=5"
+```
+
+预期：
+
+- `selected_provider=<private_provider_name>`
+- `model_name=<private_model_key>`
+- 不出现 fallback provider
 
 ---
 

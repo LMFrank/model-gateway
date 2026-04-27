@@ -33,7 +33,7 @@ from app.schemas import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("model-gateway")
 
-APP_VERSION = "0.1.6"
+APP_VERSION = "0.1.8"
 SERVICE_NAME = "model-gateway-api"
 PUBLIC_MODEL_OWNER = "model-gateway"
 COMPAT_DEPRECATION_HEADERS = {

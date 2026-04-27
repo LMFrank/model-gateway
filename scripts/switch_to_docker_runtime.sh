@@ -10,6 +10,7 @@ cd "${REPO_ROOT}"
 "${REPO_ROOT}/scripts/stop_local_gateway_background.sh"
 launchctl bootout "gui/$(id -u)/${SERVICE_LABEL}" >/dev/null 2>&1 || true
 docker rm -f model-gateway >/dev/null 2>&1 || true
+"${REPO_ROOT}/scripts/sync_monitor_local_observability.sh" disable >/dev/null || true
 
 FRONTEND_GATEWAY_UPSTREAM=model-gateway \
   docker compose --profile docker-runtime up -d --build model-gateway frontend >/dev/null

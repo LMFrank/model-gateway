@@ -12,8 +12,15 @@ STATE_DIR="${HOME}/.local/share/model-gateway"
 ENV_SNAPSHOT_PATH="${STATE_DIR}/local-gateway.env"
 PYTHON_BIN="${LOCAL_GATEWAY_PYTHON:-$(command -v python)}"
 LOG_DIR="${REPO_ROOT}/.omx/logs"
+ROTATE_SUFFIX="$(date +%Y%m%d-%H%M%S)"
 
 mkdir -p "${LAUNCH_AGENT_DIR}" "${WRAPPER_DIR}" "${STATE_DIR}" "${LOG_DIR}"
+
+for log_file in "${LOG_DIR}/launchd-local-gateway.out.log" "${LOG_DIR}/launchd-local-gateway.err.log"; do
+  if [[ -s "${log_file}" ]]; then
+    mv "${log_file}" "${log_file}.${ROTATE_SUFFIX}"
+  fi
+done
 
 "${REPO_ROOT}/scripts/stop_local_gateway_background.sh" >/dev/null 2>&1 || true
 
@@ -74,5 +81,6 @@ EOF
 launchctl bootout "gui/$(id -u)/${SERVICE_LABEL}" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$(id -u)" "${LAUNCH_AGENT_PATH}"
 launchctl kickstart -k "gui/$(id -u)/${SERVICE_LABEL}"
+"${REPO_ROOT}/scripts/sync_monitor_local_observability.sh" enable >/dev/null || true
 
 echo "installed launchd service ${SERVICE_LABEL}"

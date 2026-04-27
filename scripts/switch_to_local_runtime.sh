@@ -41,5 +41,6 @@ else:
 PY
 
 FRONTEND_GATEWAY_UPSTREAM=host.docker.internal docker compose up -d --build frontend >/dev/null
+"${REPO_ROOT}/scripts/sync_monitor_local_observability.sh" enable >/dev/null || true
 
 echo "switched model-gateway to local runtime on host:${GATEWAY_HOST_PORT}"
