@@ -285,6 +285,7 @@ curl -H "Authorization: Bearer $GATEWAY_ADMIN_TOKEN" \
 
 - 公共 provider / model 是否都已出现
 - 如启用了 private overlay，再确认私有 provider / model 是否都已出现
+- 从 `v0.1.9` 开始，`/api/providers` 与前端代理 `/api/providers` 还应返回 `runtime_config` 与 `runtime_config_extras`
 
 ---
 

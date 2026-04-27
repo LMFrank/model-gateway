@@ -15,6 +15,7 @@ from app.adapters import KimiCliAdapter, OpenAICompatibleAdapter
 from app.adapters.base import AdapterError
 from app.auth import require_admin_auth, require_client_auth
 from app.config import get_settings
+from app.provider_runtime_config import ProviderRuntimeConfigError, merge_runtime_config
 from app.repository import PostgresRepository, RepositoryError
 from app.router_engine import RouteNotFoundError, RouterEngine
 from app.schemas import (
@@ -33,7 +34,7 @@ from app.schemas import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("model-gateway")
 
-APP_VERSION = "0.1.8"
+APP_VERSION = "0.1.9"
 SERVICE_NAME = "model-gateway-api"
 PUBLIC_MODEL_OWNER = "model-gateway"
 COMPAT_DEPRECATION_HEADERS = {
@@ -131,6 +132,27 @@ def _provider_runtime_config(provider: dict[str, Any] | None) -> dict[str, Any]:
     if provider.get("api_key") is not None:
         runtime_config["api_key"] = provider.get("api_key")
     return runtime_config
+
+
+def _prepare_provider_payload(
+    payload: dict[str, Any], *, provider_type: str
+) -> dict[str, Any]:
+    normalized_provider_type = str(provider_type or "").strip().lower()
+    if normalized_provider_type not in {"api", "cli"}:
+        raise ProviderRuntimeConfigError(
+            f"unsupported provider_type for runtime config: {provider_type}"
+        )
+
+    prepared = payload.copy()
+    prepared["config"] = merge_runtime_config(
+        normalized_provider_type,  # type: ignore[arg-type]
+        config=payload.get("config"),
+        runtime_config=payload.get("runtime_config"),
+        runtime_config_extras=payload.get("runtime_config_extras"),
+    )
+    prepared.pop("runtime_config", None)
+    prepared.pop("runtime_config_extras", None)
+    return prepared
 
 
 def create_app() -> FastAPI:
@@ -289,9 +311,14 @@ def create_app() -> FastAPI:
 
     @app.post("/api/providers", dependencies=[Depends(require_admin_auth)])
     async def create_provider_api(body: ProviderCreate) -> dict[str, Any]:
-        provider_id = await run_in_threadpool(
-            repository.create_provider, body.model_dump()
-        )
+        try:
+            payload = _prepare_provider_payload(
+                body.model_dump(), provider_type=body.provider_type
+            )
+        except ProviderRuntimeConfigError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        provider_id = await run_in_threadpool(repository.create_provider, payload)
         item = await run_in_threadpool(repository.get_provider, provider_id)
         return {"id": provider_id, "item": item}
 
@@ -299,8 +326,20 @@ def create_app() -> FastAPI:
     async def update_provider_api(
         provider_id: int, body: ProviderUpdate
     ) -> dict[str, Any]:
+        existing = await run_in_threadpool(repository.get_provider, provider_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="provider not found")
+
+        try:
+            payload = _prepare_provider_payload(
+                body.model_dump(exclude_unset=True),
+                provider_type=body.provider_type or existing["provider_type"],
+            )
+        except ProviderRuntimeConfigError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         success = await run_in_threadpool(
-            repository.update_provider, provider_id, body.model_dump(exclude_unset=True)
+            repository.update_provider, provider_id, payload
         )
         if not success:
             raise HTTPException(status_code=404, detail="provider not found")

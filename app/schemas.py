@@ -16,6 +16,8 @@ class ProviderCreate(BaseModel):
     base_url: str | None = Field(default=None, max_length=512)
     api_key: str | None = Field(default=None, max_length=512)
     config: dict[str, Any] = Field(default_factory=dict)
+    runtime_config: dict[str, Any] = Field(default_factory=dict)
+    runtime_config_extras: dict[str, Any] = Field(default_factory=dict)
     description: str | None = Field(default=None)
     is_enabled: bool = True
 
@@ -26,6 +28,8 @@ class ProviderUpdate(BaseModel):
     base_url: str | None = Field(default=None, max_length=512)
     api_key: str | None = Field(default=None, max_length=512)
     config: dict[str, Any] | None = Field(default_factory=dict)
+    runtime_config: dict[str, Any] | None = Field(default_factory=dict)
+    runtime_config_extras: dict[str, Any] | None = Field(default_factory=dict)
     description: str | None = Field(default=None)
     is_enabled: bool | None = None
 
@@ -40,6 +44,8 @@ class ProviderOut(BaseModel):
     masked_api_key: str | None = None
     has_api_key: bool = False
     config: dict[str, Any]
+    runtime_config: dict[str, Any] = Field(default_factory=dict)
+    runtime_config_extras: dict[str, Any] = Field(default_factory=dict)
     description: str | None
     is_enabled: bool
     created_at: datetime | None = None

@@ -641,3 +641,87 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Files: changes.log, README.md, app/main.py, frontend/package.json, frontend/package-lock.json, frontend/src/App.vue, app/adapters/openai_compatible.py, app/repository.py, docs/integration.md, docs/runtime-release-sop.md, scripts/install_local_gateway_service.sh, scripts/start_local_gateway_background.sh, scripts/switch_to_docker_runtime.sh, scripts/switch_to_local_runtime.sh, scripts/sync_monitor_local_observability.sh, tests/test_openai_compatible_adapter.py, tests/test_repository_pg_host_fallback.py
 - Verify: `pytest -q`=42 passed；`cd frontend && npm run lint && npm run type-check && npm run build`=0；`pytest -q tests/test_public_artifacts.py`=3 passed；`git diff --check`=pass；`git tag -n | grep v0.1.8`=已创建后补验
 - Next: None
+
+## [2026-04-27 15:28:00 +0800] [Codex] [task-analyze-glm51fp8-high-failure-rate] [START]
+- Intent: 分析 glm-5.1-fp8 当前失败率偏高的原因
+- Scope: 仅读取代码、配置与当前数据库/接口运行数据定位原因；不改动业务代码或生产配置
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 先核对 usage summary、最近 call_logs 错误分布、provider 健康检查与请求落库字段
+
+## [2026-04-27 15:33:00 +0800] [Codex] [task-analyze-glm51fp8-high-failure-rate] [DONE]
+- Intent: 分析 glm-5.1-fp8 当前失败率偏高的原因
+- Scope: 已只读核对 usage 聚合、最近 call_logs、provider 健康检查与 OpenAI-compatible adapter 超时/重试逻辑；未改动业务代码或生产配置
+- Files: changes.log
+- Verify: PostgreSQL 查询显示 `2026-04-27` 的 `glm-5.1-fp8` 共 33 次、失败 26 次、失败率 78.79%，错误几乎全为 `qb-glm51: ReadTimeout`；最近请求 `latency_ms` 大量落在 `1201xx`；`POST /api/health/check/provider/10` 返回 healthy（短探针成功）；代码核对显示 adapter 默认 timeout 取 `timeout_sec` 或全局默认，且仅对 `ConnectError/ConnectTimeout` 做重试，不会重试 `ReadTimeout`
+- Next: None
+
+## [2026-04-27 15:38:00 +0800] [Codex] [task-increase-qb-glm51-timeout] [START]
+- Intent: 调大 qb-glm51 的网关侧请求超时，降低 glm-5.1-fp8 因 120s 读超时导致的失败率
+- Scope: 仅更新当前数据库中 qb-glm51 provider 的 timeout 配置并做读回验证；不改业务代码
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 将 qb-glm51 config_json 写入 timeout_sec=300，并验证 provider 配置读回与健康检查可用
+
+## [2026-04-27 15:43:00 +0800] [Codex] [task-increase-qb-glm51-timeout] [DONE]
+- Intent: 调大 qb-glm51 的网关侧请求超时，降低 glm-5.1-fp8 因 120s 读超时导致的失败率
+- Scope: 已将当前数据库中 qb-glm51 provider 的 `config_json.timeout_sec` 调整为 300，并完成读回与健康检查验证；未改业务代码
+- Files: changes.log
+- Verify: PostgreSQL 更新后查询返回 `qb-glm51 config_json={"timeout_sec": 300}`；Repository 读回 `config.timeout_sec=300`；`POST /api/health/check/provider/10`=200 且健康探针成功
+- Next: None
+
+## [2026-04-27 15:46:00 +0800] [Codex] [task-increase-qb-glm51-timeout-to-420] [START]
+- Intent: 继续调大 qb-glm51 的网关侧请求超时到 420s，进一步降低长请求因超时导致的失败率
+- Scope: 仅更新当前数据库中 qb-glm51 provider 的 timeout 配置并做读回验证；不改业务代码
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 将 qb-glm51 config_json.timeout_sec 从 300 更新到 420，并验证配置读回正常
+
+## [2026-04-27 15:49:00 +0800] [Codex] [task-increase-qb-glm51-timeout-to-420] [DONE]
+- Intent: 继续调大 qb-glm51 的网关侧请求超时到 420s，进一步降低长请求因超时导致的失败率
+- Scope: 已将当前数据库中 qb-glm51 provider 的 `config_json.timeout_sec` 调整为 420，并完成读回与健康检查验证；未改业务代码
+- Files: changes.log
+- Verify: PostgreSQL 更新后查询返回 `qb-glm51 config_json={"timeout_sec": 420}`；Repository 读回 `config.timeout_sec=420`；`POST /api/health/check/provider/10`=200 且探针成功
+- Next: None
+
+## [2026-04-27 16:05:00 +0800] [Codex] [task-provider-runtime-config-center] [START]
+- Intent: 全量实现 Provider 运行参数配置中心，并在完成后做生产环境验证
+- Scope: 覆盖后端运行参数 schema/兼容层、Provider API、前端结构化表单与摘要展示、测试与部署验证；不扩展到模型级或路由级配置中心
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 先盘点 Provider 相关后端/前端实现与当前工作树状态，再按计划逐步落地
+
+## [2026-04-27 16:17:00 +0800] [Codex] [task-provider-runtime-config-center] [DONE]
+- Intent: 全量实现 Provider 运行参数配置中心，并在完成后做生产环境验证
+- Scope: 已完成后端运行参数 schema/兼容层、Provider API 适配、前端结构化表单与摘要展示、测试与本地生产运行模式验证；未扩展到模型级或路由级配置中心
+- Files: changes.log, app/provider_runtime_config.py, app/main.py, app/repository.py, app/schemas.py, frontend/src/views/Providers.vue, frontend/src/types/provider.ts, frontend/src/ui/designTokens.ts, tests/test_provider_runtime_config.py, tests/test_auth_and_provider_security.py
+- Verify: `pytest -q`=50 passed；`python -m py_compile app/main.py app/repository.py app/provider_runtime_config.py app/schemas.py`=0；`cd frontend && npm run type-check && npm run lint && npm run build`=0；`./scripts/switch_to_local_runtime.sh` 成功重启本地生产运行模式并重建 frontend；`./scripts/verify_runtime.sh --mode local`=VERIFY_RUNTIME_OK；`GET /api/providers` 与 `GET http://127.0.0.1:8620/api/providers` 均返回 `runtime_config/runtime_config_extras`；`POST /v1/chat/completions` 调用 `glm-5.1-fp8` 短请求=200
+- Next: None
+
+## [2026-04-27 16:24:00 +0800] [Codex] [task-redeploy-and-verify-runtime-config-center] [START]
+- Intent: 重新部署包含 Provider 运行参数配置中心的当前版本，并验证运行链路正常
+- Scope: 聚焦本地生产运行模式重启 gateway/frontend 与验收；不新增业务逻辑改动
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 执行本地运行模式切换脚本重新部署，再跑 verify_runtime 与关键接口核验
+
+## [2026-04-27 16:29:00 +0800] [Codex] [task-redeploy-and-verify-runtime-config-center] [DONE]
+- Intent: 重新部署包含 Provider 运行参数配置中心的当前版本，并验证运行链路正常
+- Scope: 已完成本地生产运行模式的 gateway/frontend 重启与验收；未新增业务逻辑改动
+- Files: changes.log
+- Verify: `./scripts/switch_to_local_runtime.sh` 成功重启本地 gateway 并重建 frontend；`./scripts/verify_runtime.sh --mode local`=VERIFY_RUNTIME_OK；`GET /api/providers` 与 `GET http://127.0.0.1:8620/api/providers` 均返回 `runtime_config/runtime_config_extras`；`POST /v1/chat/completions` 调用 `qwen3.6-plus`=200
+- Next: None
+
+## [2026-04-27 16:35:00 +0800] [Codex] [task-release-v0-1-9] [START]
+- Intent: 更新 model-gateway release 到 v0.1.9，并同步 Provider 运行参数配置中心相关文档与版本号
+- Scope: 聚焦版本号、README/相关文档、测试校验与 git release 提交打 tag；不新增业务逻辑
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 先把版本从 v0.1.8 升到 v0.1.9，并补充 README 中对 Provider 运行参数配置中心的说明与版本历史
+
+## [2026-04-27 16:42:00 +0800] [Codex] [task-release-v0-1-9] [DONE]
+- Intent: 更新 model-gateway release 到 v0.1.9，并同步 Provider 运行参数配置中心相关文档与版本号
+- Scope: 已完成版本号同步、README/集成文档/运行 SOP 更新、测试校验与 git 提交打 tag；未新增业务逻辑
+- Files: changes.log, README.md, app/main.py, frontend/package.json, frontend/package-lock.json, frontend/src/App.vue, docs/integration.md, docs/runtime-release-sop.md, app/provider_runtime_config.py, app/repository.py, app/schemas.py, frontend/src/types/provider.ts, frontend/src/ui/designTokens.ts, frontend/src/views/Providers.vue, tests/test_auth_and_provider_security.py, tests/test_provider_runtime_config.py
+- Verify: `pytest -q`=50 passed；`cd frontend && npm run lint && npm run type-check && npm run build`=0；`git diff --check`=pass；`git tag -n | grep v0.1.9`=已创建
+- Next: None

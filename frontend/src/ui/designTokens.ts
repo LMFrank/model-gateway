@@ -1,7 +1,7 @@
 export const uiLayoutTokens = {
   drawerSize: '75%',
   gridGutter: 20,
-  dialogWidth: '640px',
+  dialogWidth: '760px',
   formLabelWidth: '120px',
 } as const
 
@@ -11,6 +11,7 @@ export const uiTableTokens = {
     displayNameMinWidth: 180,
     typeWidth: 110,
     baseUrlMinWidth: 220,
+    runtimeConfigMinWidth: 220,
     statusWidth: 110,
     actionsWidth: 260,
   },

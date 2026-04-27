@@ -29,6 +29,16 @@
           :min-width="uiTableTokens.providers.baseUrlMinWidth"
           show-overflow-tooltip
         />
+        <el-table-column label="运行参数" :min-width="uiTableTokens.providers.runtimeConfigMinWidth">
+          <template #default="{ row }">
+            <div class="runtime-summary">
+              <el-tag v-for="item in summarizeRuntimeConfig(row)" :key="item" size="small" effect="plain">
+                {{ item }}
+              </el-tag>
+              <span v-if="summarizeRuntimeConfig(row).length === 0" class="runtime-summary-empty">未配置</span>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" :width="uiTableTokens.providers.statusWidth">
           <template #default="{ row }">
             <el-switch
@@ -94,13 +104,86 @@
             当前已配置密钥：{{ currentMaskedApiKey }}；留空表示不更新。
           </div>
         </el-form-item>
-        <el-form-item label="配置(JSON)">
+
+        <el-divider content-position="left">运行参数</el-divider>
+
+        <template v-if="form.provider_type === 'api'">
+          <el-form-item label="超时(s)">
+            <el-input-number v-model="apiRuntimeForm.timeout_sec" :min="1" :max="3600" />
+          </el-form-item>
+          <el-form-item label="连接重试次数">
+            <el-input-number v-model="apiRuntimeForm.connect_retries" :min="0" :max="10" />
+          </el-form-item>
+          <el-form-item label="重试退避(s)">
+            <el-input-number v-model="apiRuntimeForm.retry_backoff_sec" :min="0" :max="60" :step="0.5" />
+          </el-form-item>
+          <el-form-item label="Chat Endpoint">
+            <el-input v-model="apiRuntimeForm.chat_endpoint" placeholder="/chat/completions" />
+          </el-form-item>
+          <el-form-item label="上游模型名">
+            <el-input v-model="apiRuntimeForm.upstream_model" placeholder="glm-5.1-fp8" />
+          </el-form-item>
+        </template>
+
+        <template v-else>
+          <el-form-item label="超时(s)">
+            <el-input-number v-model="cliRuntimeForm.timeout_sec" :min="1" :max="3600" />
+          </el-form-item>
+          <el-form-item label="命令">
+            <el-input v-model="cliRuntimeForm.command" placeholder="kimi / codex" />
+          </el-form-item>
+          <el-form-item label="args(逐行)">
+            <el-input
+              v-model="cliArgsText"
+              type="textarea"
+              :rows="uiFormTokens.shortTextareaRows + 1"
+              placeholder="exec&#10;--skip-git-repo-check"
+            />
+          </el-form-item>
+          <el-form-item label="extra_args(逐行)">
+            <el-input
+              v-model="cliExtraArgsText"
+              type="textarea"
+              :rows="uiFormTokens.shortTextareaRows + 1"
+              placeholder="--print&#10;--output-format"
+            />
+          </el-form-item>
+          <el-form-item label="model_arg">
+            <el-input v-model="cliRuntimeForm.model_arg" placeholder="--model" />
+          </el-form-item>
+          <el-form-item label="prompt_arg">
+            <el-input v-model="cliRuntimeForm.prompt_arg" placeholder="--prompt / -p" />
+          </el-form-item>
+          <el-form-item label="stream_arg">
+            <el-input v-model="cliRuntimeForm.stream_arg" placeholder="--stream" />
+          </el-form-item>
+          <el-form-item label="stdin_prompt_arg">
+            <el-input v-model="cliRuntimeForm.stdin_prompt_arg" placeholder="-" />
+          </el-form-item>
+          <el-form-item label="response_file">
+            <el-input v-model="cliRuntimeForm.response_file" placeholder="/tmp/codex_last_message.txt" />
+          </el-form-item>
+          <el-form-item label="上游模型名">
+            <el-input v-model="cliRuntimeForm.upstream_model" placeholder="gpt-5.4 / kimi-k2.5" />
+          </el-form-item>
+          <el-form-item label="use_stdin_prompt">
+            <el-switch v-model="cliRuntimeForm.use_stdin_prompt" />
+          </el-form-item>
+          <el-form-item label="force_stdin_prompt">
+            <el-switch v-model="cliRuntimeForm.force_stdin_prompt" />
+          </el-form-item>
+        </template>
+
+        <el-form-item label="高级扩展(JSON)">
           <el-input
-            v-model="configJson"
+            v-model="runtimeExtrasJson"
             type="textarea"
             :rows="uiFormTokens.providerConfigRows"
-            placeholder='{"timeout_sec": 120, "upstream_model": "model-name"}'
+            placeholder='{"custom_header": "x-demo"}'
           />
+          <div class="mg-form-help">
+            仅填写未结构化支持的扩展键；已提供表单的字段请优先在上方配置。
+          </div>
         </el-form-item>
         <el-form-item label="描述">
           <el-input
@@ -131,7 +214,15 @@ import { Plus } from '@element-plus/icons-vue'
 import { useProvidersStore } from '@/stores/providers'
 import { extractErrorMessage } from '@/stores/helpers'
 import { uiFormTokens, uiLayoutTokens, uiTableTokens } from '@/ui/designTokens'
-import type { CreateProviderRequest, HealthStatus, Provider } from '@/types'
+import type {
+  ApiRuntimeConfig,
+  CliRuntimeConfig,
+  CreateProviderRequest,
+  HealthStatus,
+  JsonObject,
+  Provider,
+  ProviderRuntimeConfig,
+} from '@/types'
 
 const providersStore = useProvidersStore()
 
@@ -141,6 +232,8 @@ const editingId = ref<number | null>(null)
 const checkingProviderId = ref<number | null>(null)
 const currentMaskedApiKey = ref<string | null>(null)
 const formRef = ref<FormInstance>()
+const cliArgsText = ref('')
+const cliExtraArgsText = ref('')
 
 const buildDefaultForm = (): CreateProviderRequest => ({
   name: '',
@@ -148,23 +241,27 @@ const buildDefaultForm = (): CreateProviderRequest => ({
   provider_type: 'api',
   base_url: '',
   api_key: '',
-  config: {},
+  runtime_config: {},
+  runtime_config_extras: {},
   description: '',
   is_enabled: true,
 })
 
 const form = ref<CreateProviderRequest>(buildDefaultForm())
 
-const configJson = computed({
-  get: () => JSON.stringify(form.value.config || {}, null, 2),
+const runtimeExtrasJson = computed({
+  get: () => JSON.stringify(form.value.runtime_config_extras || {}, null, 2),
   set: (raw: string) => {
     try {
-      form.value.config = JSON.parse(raw)
+      form.value.runtime_config_extras = JSON.parse(raw) as JsonObject
     } catch {
       // 忽略不完整 JSON，提交前会再次校验
     }
   },
 })
+
+const apiRuntimeForm = computed<ApiRuntimeConfig>(() => (form.value.runtime_config || {}) as ApiRuntimeConfig)
+const cliRuntimeForm = computed<CliRuntimeConfig>(() => (form.value.runtime_config || {}) as CliRuntimeConfig)
 
 const apiKeyPlaceholder = computed(() =>
   isEdit.value ? '留空表示不更新现有 API Key' : 'API Key',
@@ -182,11 +279,52 @@ const getHealthLabel = (status: HealthStatus) => {
   return '未知'
 }
 
+const compactObject = <T extends Record<string, unknown>>(value: T): T => {
+  const output = Object.fromEntries(
+    Object.entries(value).filter(([, item]) => {
+      if (item === '' || item === null || item === undefined) return false
+      if (Array.isArray(item) && item.length === 0) return false
+      return true
+    }),
+  )
+  return output as T
+}
+
+const parseLineList = (raw: string): string[] =>
+  raw
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+const formatLineList = (items: unknown): string =>
+  Array.isArray(items) ? items.map((item) => String(item)).join('\n') : ''
+
+const summarizeRuntimeConfig = (provider: Provider): string[] => {
+  const config = provider.runtime_config || {}
+  const summary: string[] = []
+  if (typeof config.timeout_sec === 'number') summary.push(`timeout=${config.timeout_sec}s`)
+  if (typeof config.connect_retries === 'number') summary.push(`retries=${config.connect_retries}`)
+  if (typeof config.upstream_model === 'string' && config.upstream_model) summary.push(`model=${config.upstream_model}`)
+  if (typeof config.command === 'string' && config.command) summary.push(`cmd=${config.command}`)
+  return summary.slice(0, 3)
+}
+
+const syncCliTextFields = () => {
+  cliArgsText.value = formatLineList(cliRuntimeForm.value.args)
+  cliExtraArgsText.value = formatLineList(cliRuntimeForm.value.extra_args)
+}
+
+const resetForm = () => {
+  form.value = buildDefaultForm()
+  currentMaskedApiKey.value = null
+  cliArgsText.value = ''
+  cliExtraArgsText.value = ''
+}
+
 const openCreateDialog = () => {
   isEdit.value = false
   editingId.value = null
-  currentMaskedApiKey.value = null
-  form.value = buildDefaultForm()
+  resetForm()
   dialogVisible.value = true
 }
 
@@ -199,12 +337,81 @@ const openEditDialog = (row: Provider) => {
     provider_type: row.provider_type,
     base_url: row.base_url || '',
     api_key: '',
-    config: row.config || {},
+    runtime_config: { ...(row.runtime_config || {}) },
+    runtime_config_extras: { ...(row.runtime_config_extras || {}) },
     description: row.description || '',
     is_enabled: row.is_enabled,
   }
   currentMaskedApiKey.value = row.masked_api_key || (row.has_api_key ? '已配置' : null)
+  syncCliTextFields()
   dialogVisible.value = true
+}
+
+const validateRuntimeConfig = (runtimeConfig: ProviderRuntimeConfig) => {
+  if (typeof runtimeConfig.timeout_sec === 'number' && runtimeConfig.timeout_sec <= 0) {
+    throw new Error('timeout_sec 必须大于 0')
+  }
+  if (typeof runtimeConfig.connect_retries === 'number' && runtimeConfig.connect_retries < 0) {
+    throw new Error('connect_retries 不能小于 0')
+  }
+  if (
+    typeof runtimeConfig.retry_backoff_sec === 'number' &&
+    runtimeConfig.retry_backoff_sec < 0
+  ) {
+    throw new Error('retry_backoff_sec 不能小于 0')
+  }
+  if (
+    typeof runtimeConfig.chat_endpoint === 'string' &&
+    runtimeConfig.chat_endpoint &&
+    !runtimeConfig.chat_endpoint.startsWith('/')
+  ) {
+    throw new Error('chat_endpoint 必须以 / 开头')
+  }
+}
+
+const buildRuntimeConfigForSubmit = (): ProviderRuntimeConfig => {
+  if (form.value.provider_type === 'api') {
+    return compactObject({
+      timeout_sec: apiRuntimeForm.value.timeout_sec,
+      connect_retries: apiRuntimeForm.value.connect_retries,
+      retry_backoff_sec: apiRuntimeForm.value.retry_backoff_sec,
+      chat_endpoint: apiRuntimeForm.value.chat_endpoint,
+      upstream_model: apiRuntimeForm.value.upstream_model,
+    }) as ProviderRuntimeConfig
+  }
+
+  return compactObject({
+    timeout_sec: cliRuntimeForm.value.timeout_sec,
+    command: cliRuntimeForm.value.command,
+    args: parseLineList(cliArgsText.value),
+    extra_args: parseLineList(cliExtraArgsText.value),
+    model_arg: cliRuntimeForm.value.model_arg,
+    prompt_arg: cliRuntimeForm.value.prompt_arg,
+    stream_arg: cliRuntimeForm.value.stream_arg,
+    stdin_prompt_arg: cliRuntimeForm.value.stdin_prompt_arg,
+    response_file: cliRuntimeForm.value.response_file,
+    upstream_model: cliRuntimeForm.value.upstream_model,
+    use_stdin_prompt: cliRuntimeForm.value.use_stdin_prompt,
+    force_stdin_prompt: cliRuntimeForm.value.force_stdin_prompt,
+  }) as ProviderRuntimeConfig
+}
+
+const buildSubmitPayload = (): CreateProviderRequest => {
+  let runtimeConfigExtras: JsonObject = {}
+  try {
+    runtimeConfigExtras = JSON.parse(runtimeExtrasJson.value || '{}') as JsonObject
+  } catch {
+    throw new Error('高级扩展 JSON 格式无效')
+  }
+
+  const runtimeConfig = buildRuntimeConfigForSubmit()
+  validateRuntimeConfig(runtimeConfig)
+
+  return {
+    ...form.value,
+    runtime_config: runtimeConfig,
+    runtime_config_extras: runtimeConfigExtras,
+  }
 }
 
 const handleSubmit = async () => {
@@ -217,11 +424,12 @@ const handleSubmit = async () => {
   }
 
   try {
+    const payload = buildSubmitPayload()
     if (isEdit.value && editingId.value !== null) {
-      await providersStore.update(editingId.value, form.value)
+      await providersStore.update(editingId.value, payload)
       ElMessage.success('更新成功')
     } else {
-      await providersStore.create(form.value)
+      await providersStore.create(payload)
       ElMessage.success('创建成功')
     }
     dialogVisible.value = false
@@ -295,6 +503,17 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: var(--mg-space-1);
+}
+
+.runtime-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mg-space-1);
+}
+
+.runtime-summary-empty {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .mg-form-help {

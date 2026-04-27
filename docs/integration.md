@@ -385,6 +385,11 @@ curl -X POST http://localhost:8080/api/routes \
 2. Models → 新增 Model
 3. Routes → 新增路由规则
 
+从 `v0.1.9` 开始，Providers 页面已支持 **运行参数配置中心**：
+- API Provider：可直接编辑 `timeout_sec`、`connect_retries`、`retry_backoff_sec`、`chat_endpoint`、`upstream_model`
+- CLI Provider：可直接编辑 `timeout_sec`、`command`、`args`、`extra_args`、`model_arg`、`prompt_arg`、`stream_arg` 等
+- 仍可通过 “高级扩展(JSON)” 保留未结构化的自定义键
+
 ### 3. 通过 SQL 迁移
 
 ```sql

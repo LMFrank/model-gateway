@@ -1,4 +1,4 @@
-# Model Gateway v0.1.8
+# Model Gateway v0.1.9
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/downloads/)
@@ -6,7 +6,7 @@
 
 **OpenAI 兼容的 LLM 网关，统一管理多个 Provider，将 CLI 工具封装为 API。**
 
-**当前版本**: `v0.1.8`（2026-04-27）
+**当前版本**: `v0.1.9`（2026-04-27）
 
 > ⚠️ **使用提醒**: 使用本项目时请遵守各模型官方的服务条款和使用规则。
 
@@ -423,6 +423,11 @@ models = [m["id"] for m in response.json()["data"]]
 > - 路由写入请优先使用核心 `/api/routes`
 > - 兼容层响应会返回 `X-Model-Gateway-Compat: deprecated`
 
+Provider 管理页现已内置 **运行参数配置中心**：
+- API Provider 可直接编辑 `timeout_sec`、`connect_retries`、`retry_backoff_sec`、`chat_endpoint`、`upstream_model`
+- CLI Provider 可直接编辑 `timeout_sec`、`command`、`args`、`extra_args`、`model_arg`、`prompt_arg`、`stream_arg`、`stdin_prompt_arg`、`response_file` 等运行参数
+- 高级扩展参数仍保留在 “高级扩展(JSON)” 区域，保存时会与结构化运行参数合并写回 `providers.config_json`
+
 ## 发布前闭环验证清单
 
 发布或切换运行模式后，至少执行以下验证：
@@ -525,6 +530,7 @@ API Key 存储在数据库，建议：
 
 ## 版本历史
 
+- `v0.1.9` (2026-04-27): 新增 Provider 运行参数配置中心；后端增加结构化 `runtime_config/runtime_config_extras` 兼容层并保持 `providers.config_json` 存储不变；前端 Provider 管理页支持结构化编辑超时、重试、endpoint、CLI 命令参数；完成本地生产运行模式重部署与验收验证
 - `v0.1.8` (2026-04-27): 收口私有 provider seed 的明文密钥，统一改为 `psql -v` 变量注入；补充私有 overlay 文档示例；新增 OpenAI 兼容 adapter 瞬时连接重试测试与本地 `PG_HOST=pg -> 127.0.0.1` 回退测试；同步前后端版本号与公开文档去私有化校验
 - `v0.1.7` (2026-04-23): 增加 OpenAI 兼容 adapter 的瞬时连接重试；补齐本地直跑 `PG_HOST=pg -> 127.0.0.1` 兼容；新增 launchd 本地常驻服务与 monitor file_sd / 本地日志采集衔接；同步 README 与 runtime SOP 的本地部署/可观测说明
 - `v0.1.6` (2026-04-10): 补齐 admin/client Bearer 鉴权；新增 client-safe `/v1/models`；provider secret 默认脱敏；新增 `sql/bootstrap_model_gateway.sql` 并完成空库 bootstrap smoke 验证；移除 runtime fallback 语义

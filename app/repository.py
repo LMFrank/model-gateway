@@ -12,6 +12,7 @@ from psycopg.types.json import Json
 
 from app.config import Settings
 from app.crypto import ApiKeyCrypto
+from app.provider_runtime_config import ProviderRuntimeConfigError, split_runtime_config
 
 
 class RepositoryError(Exception):
@@ -139,6 +140,15 @@ class PostgresRepository:
         self, row: dict[str, Any], *, include_secret: bool = False
     ) -> dict[str, Any]:
         api_key = self._decrypt_api_key(row.get("api_key"))
+        config = self._json_load(row.get("config_json")) or {}
+        provider_type = str(row.get("provider_type") or "api").strip().lower()
+        try:
+            runtime_config, runtime_config_extras = split_runtime_config(
+                provider_type if provider_type in {"api", "cli"} else "api",
+                config,
+            )
+        except ProviderRuntimeConfigError:
+            runtime_config, runtime_config_extras = {}, config
         return {
             "id": row["id"],
             "name": row["name"],
@@ -148,7 +158,9 @@ class PostgresRepository:
             "api_key": api_key if include_secret else None,
             "masked_api_key": self._mask_api_key(api_key),
             "has_api_key": bool(api_key),
-            "config": self._json_load(row.get("config_json")) or {},
+            "config": config,
+            "runtime_config": runtime_config,
+            "runtime_config_extras": runtime_config_extras,
             "description": row["description"],
             "is_enabled": bool(row.get("is_enabled", True)),
             "created_at": row.get("created_at"),
