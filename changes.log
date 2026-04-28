@@ -725,3 +725,31 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Files: changes.log, README.md, app/main.py, frontend/package.json, frontend/package-lock.json, frontend/src/App.vue, docs/integration.md, docs/runtime-release-sop.md, app/provider_runtime_config.py, app/repository.py, app/schemas.py, frontend/src/types/provider.ts, frontend/src/ui/designTokens.ts, frontend/src/views/Providers.vue, tests/test_auth_and_provider_security.py, tests/test_provider_runtime_config.py
 - Verify: `pytest -q`=50 passed；`cd frontend && npm run lint && npm run type-check && npm run build`=0；`git diff --check`=pass；`git tag -n | grep v0.1.9`=已创建
 - Next: None
+
+## [2026-04-28 14:06:25 +0800] [Codex] [task-fix-local-gateway-launchd-python-env] [START]
+- Intent: 修复本地后端 launchd 常驻服务启动失败问题，并改为优先使用现有 conda `stock` 环境
+- Scope: 仅调整本地服务启动脚本/安装脚本的 Python 选择逻辑并重装服务验证；不改业务接口逻辑
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 更新脚本默认解释器选择，重装 ai.model-gateway.local，并验证 launchctl 状态与健康接口
+
+## [2026-04-28 14:14:42 +0800] [Codex] [task-fix-local-gateway-launchd-python-env] [DONE]
+- Intent: 修复本地后端 launchd 常驻服务启动失败问题，并改为优先使用现有 conda `stock` 环境
+- Scope: 已调整本地服务安装脚本/启动脚本的 Python 选择与 launchd 启动形态，重装并验证 `ai.model-gateway.local` 常驻；未改业务接口逻辑
+- Files: changes.log, scripts/install_local_gateway_service.sh, scripts/run_local_gateway.sh
+- Verify: `conda env list` 确认存在 `stock`；`/opt/anaconda3/envs/stock/bin/python` 依赖检查通过（fastapi/uvicorn/prometheus_client/httpx/psycopg/pydantic）；`launchctl print gui/$(id -u)/ai.model-gateway.local`=state running；`lsof -nP -iTCP:8080 -sTCP:LISTEN` 显示 `python3.11` 监听 8080；`curl http://127.0.0.1:8080/healthz`=200 `{"status":"ok"}`；`~/.local/share/model-gateway/logs/uvicorn.err.log` 显示 startup complete
+- Next: None
+
+## [2026-04-28 14:57:20 +0800] [Codex] [task-retain-7d-and-repair-monitor-log-visibility] [START]
+- Intent: 为本地 gateway 日志增加最近 7 天保留策略，并修复 monitor 对当前本地日志目录的可见性
+- Scope: 聚焦本地 launchd/log cleanup 与 monitor 日志挂载/采集配置；不改业务接口逻辑
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 先补 7 天日志清理机制，再修正 monitor 对本地日志目录与采集 pattern 的配置并验证
+
+## [2026-04-28 15:00:54 +0800] [Codex] [task-retain-7d-and-repair-monitor-log-visibility] [DONE]
+- Intent: 为本地 gateway 日志增加最近 7 天保留策略，并修复 monitor 对当前本地日志目录的可见性
+- Scope: 已增加本地 launchd 日志日切/7 天清理 agent，并完成 monitor 对新日志目录与 uvicorn/launchd 日志 glob 的适配；未改业务接口逻辑
+- Files: changes.log, scripts/install_local_gateway_service.sh, scripts/uninstall_local_gateway_service.sh, scripts/local_gateway_service_status.sh, scripts/rotate_local_gateway_logs.sh
+- Verify: `bash -n scripts/install_local_gateway_service.sh scripts/run_local_gateway.sh scripts/uninstall_local_gateway_service.sh scripts/local_gateway_service_status.sh scripts/rotate_local_gateway_logs.sh`=pass；构造 `retention-test.log.OLD` 并执行 `LOCAL_GATEWAY_LOG_RETENTION_DAYS=7 bash scripts/rotate_local_gateway_logs.sh` 后旧文件被删除；`bash scripts/install_local_gateway_service.sh` 后 `launchctl print gui/$(id -u)/ai.model-gateway.local`=running、`ai.model-gateway.local-log-maintenance` 最近退出码=0；`curl http://127.0.0.1:8080/healthz`=200
+- Next: None
