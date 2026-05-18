@@ -24,9 +24,11 @@ class _ClientFactory:
     def __init__(self, side_effects: list[object]) -> None:
         self._side_effects = list(side_effects)
         self.calls = 0
+        self.kwargs: list[dict] = []
 
     def __call__(self, *args, **kwargs):  # noqa: ANN002,ANN003
         factory = self
+        factory.kwargs.append(kwargs)
 
         class _Client:
             async def __aenter__(self):  # noqa: ANN202
@@ -60,6 +62,10 @@ def test_chat_retries_on_connect_error_then_succeeds() -> None:
         result = asyncio.run(adapter.chat(payload, provider_config))
 
     assert factory.calls == 2
+    assert factory.kwargs == [
+        {"timeout": Settings().openai_compatible_timeout_sec, "trust_env": False},
+        {"timeout": Settings().openai_compatible_timeout_sec, "trust_env": False},
+    ]
     assert result["choices"][0]["message"]["content"] == "ok"
 
 

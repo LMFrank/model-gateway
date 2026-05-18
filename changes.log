@@ -753,3 +753,73 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Files: changes.log, scripts/install_local_gateway_service.sh, scripts/uninstall_local_gateway_service.sh, scripts/local_gateway_service_status.sh, scripts/rotate_local_gateway_logs.sh
 - Verify: `bash -n scripts/install_local_gateway_service.sh scripts/run_local_gateway.sh scripts/uninstall_local_gateway_service.sh scripts/local_gateway_service_status.sh scripts/rotate_local_gateway_logs.sh`=pass；构造 `retention-test.log.OLD` 并执行 `LOCAL_GATEWAY_LOG_RETENTION_DAYS=7 bash scripts/rotate_local_gateway_logs.sh` 后旧文件被删除；`bash scripts/install_local_gateway_service.sh` 后 `launchctl print gui/$(id -u)/ai.model-gateway.local`=running、`ai.model-gateway.local-log-maintenance` 最近退出码=0；`curl http://127.0.0.1:8080/healthz`=200
 - Next: None
+
+## [2026-04-29 16:02:51 +0800] [Codex] [task-add-ai-observability-debug-mode] [START]
+- Intent: 参考 StockAgents 轻量可观测改造，为 model-gateway 增加面向 Codex/OpenCode 的只读排障入口与自动使用规则
+- Scope: 聚焦 debug bundle 脚本、项目级排障规则与 README 入口说明；不改业务接口、不新增依赖、不重启服务
+- Files: changes.log
+- Verify: N/A（开始记录）
+- Next: 新增 model-gateway 只读 debug bundle 并补 AGENTS/README 可观测排障入口
+
+## [2026-04-29 16:07:51 +0800] [Codex] [task-add-ai-observability-debug-mode] [DONE]
+- Intent: 参考 StockAgents 轻量可观测改造，为 model-gateway 增加面向 Codex/OpenCode 的只读排障入口与自动使用规则
+- Scope: 已新增 model-gateway debug bundle，聚合 health、Prometheus target、admin call logs、usage summary、Loki 与本地 runtime log；已补 AGENTS 与 README 入口说明；未改业务接口、未新增依赖、未重启服务
+- Files: changes.log, AGENTS.md, README.md, scripts/debug/model_gateway_debug_bundle.sh, tests/test_debug_scripts.py
+- Verify: `bash -n scripts/debug/model_gateway_debug_bundle.sh`=pass；`bash scripts/debug/model_gateway_debug_bundle.sh --help`=pass；`pytest -q tests/test_debug_scripts.py`=2 passed；`bash scripts/debug/model_gateway_debug_bundle.sh --recent 5m --limit 3` 成功输出 healthz=200、model-gateway-api Prometheus target=up、admin call log/usage summary、Loki recent logs；`pytest -q`=52 passed；`git diff --check`=pass
+- Next: None
+
+## [2026-04-29 22:37:14 +0800] [Codex] [fix-client-model-catalog-provider-filter] [START]
+- Intent: 修复 /v1/models 暴露禁用 provider 模型导致下游自动发现选择不可调用模型的问题。
+- Scope: 最小修改 client-safe models catalog 过滤 provider.is_enabled；不改鉴权、不改调用路由语义、不泄露密钥。
+- Files: TBD
+- Verify: 待执行定向 pytest 与生产 /v1/models/chat smoke。
+- Next: 修改 repository route payload 带 provider enabled 并在 /v1/models 过滤。
+
+## [2026-04-29 22:43:25 +0800] [Codex] [fix-client-model-catalog-provider-filter] [DONE]
+- Intent: 修复 /v1/models 暴露禁用 provider 模型导致下游自动发现选择不可调用模型的问题。
+- Scope: client-safe /v1/models 过滤 provider.is_enabled；运行时启用已验证可用的 bailian_coding_api，并禁用当前 ConnectError 的 qizhi/qb-glm51；不改鉴权、不改密钥、不改调用路由核心语义。
+- Files: app/main.py, app/repository.py, tests/test_auth_and_provider_security.py, changes.log
+- Verify: python -m py_compile app/main.py app/repository.py => pass；pytest -q tests/test_auth_and_provider_security.py::test_client_models_endpoint_lists_only_active_models => 1 passed；bash scripts/debug/model_gateway_debug_bundle.sh --recent 15m --limit 5 => healthz=200 且失败主因定位为 qizhi/qb-glm51 ConnectError、bailian_coding_api disabled；launchctl kickstart 后 /healthz=200；/v1/models 仅返回 bailian_coding_api 下可用模型；qwen3.6-plus 与 qwen3-coder-plus chat smoke => 200；Kimi-K2.6/glm-5.1-fp8 => provider disabled 502（预期下线）。
+- Next: None
+
+## [2026-04-29 22:47:17 +0800] [Codex] [runtime-switch-to-qizhi-models] [START]
+- Intent: 按用户新要求将百炼 provider 改为不可用，并让前端/下游模型目录只匹配 qizhi 系 Kimi-K2.6 与 glm-5.1-fp8。
+- Scope: 调整 model-gateway 运行时 provider 可用性并验证 /v1/models、chat 与 StockAgents /api/settings 同步；除非验证发现代码缺陷，否则不改业务代码。
+- Files: changes.log
+- Verify: 待执行 provider DB 查询、gateway catalog/chat smoke、StockAgents settings 与前端 API smoke。
+- Next: 查询当前 provider/route 状态并执行最小运行时配置变更。
+
+## [2026-04-29 22:56:18 +0800] [Codex] [runtime-switch-to-qizhi-models] [DONE]
+- Intent: 按用户新要求将百炼 provider 改为不可用，并让前端/下游模型目录只匹配 qizhi 系 Kimi-K2.6 与 glm-5.1-fp8。
+- Scope: 已禁用 bailian_coding_api/bailian_api，启用 qizhi/qb-glm51；修复 openai-compatible adapter 默认继承系统代理导致 qizhi/qb upstream ConnectError 的问题；/v1/models 仅暴露 Kimi-K2.6 与 glm-5.1-fp8。
+- Files: app/adapters/openai_compatible.py, tests/test_openai_compatible_adapter.py, changes.log
+- Verify: /v1/models => [glm-5.1-fp8, Kimi-K2.6]；gateway chat smoke Kimi-K2.6=200、glm-5.1-fp8=200；python -m py_compile app/adapters/openai_compatible.py app/main.py app/repository.py => pass；pytest -q tests/test_openai_compatible_adapter.py tests/test_auth_and_provider_security.py::test_client_models_endpoint_lists_only_active_models => 3 passed；git diff --check => pass。
+- Next: None
+
+## [2026-05-18 13:00:57 +0800] [Codex] [migrate-local-code-paths-20260518] [START]
+- Intent: 将 model-gateway 本地服务从 OneDrive 路径切换到 ~/Code/stock/model-gateway，并验证迁移后服务健康状态。
+- Scope: 仅迁移/切换本机运行路径与 launchd wrapper；不改业务逻辑、不删除 OneDrive 源目录、不变更密钥。
+- Files: changes.log
+- Verify: 待执行 launchd 重装、8080 health、Docker/compose 状态检查。
+- Next: 运行 install_local_gateway_service.sh 重新生成本地 launchd wrapper 并验证健康接口。
+
+## [2026-05-18 13:05:33 +0800] [Codex] [migrate-local-code-paths-20260518] [DONE]
+- Intent: 将 model-gateway 本地服务从 OneDrive 路径切换到 ~/Code/stock/model-gateway，并验证迁移后服务健康状态。
+- Scope: 已重新安装 launchd wrapper 指向新路径，重启 Docker Desktop 后恢复依赖数据库与相关容器；未删除 OneDrive 源目录、未变更业务逻辑或密钥。
+- Files: changes.log
+- Verify: launchd wrapper REPO_ROOT=/Users/xushuchi/Code/stock/model-gateway；curl http://127.0.0.1:8080/healthz -> {"status":"ok"}；model-gateway UI 8620 -> 200；StockAgents core /health -> {"status":"ok","agents_count":8}，web 8501 -> 200；sub2api /health -> {"status":"ok"}，UI 18080 -> 200；Docker 容器 stockagents-core/sub2api/pg 均 healthy；所选容器挂载无 OneDrive 路径。
+- Next: None
+
+## [2026-05-18 14:10:00 +0800] [Codex] [release-v0-1-10] [START]
+- Intent: 将当前 provider 过滤、代理隔离、轻量排障与本地迁移验证收口为 v0.1.10 release，并提交/tag。
+- Scope: 更新版本号、README/CHANGELOG、协作日志并提交；不改密钥、不重置运行时数据库、不删除 OneDrive 备份目录。
+- Files: Pending
+- Verify: 待运行 pytest、py_compile、前端 lint/type-check/build、compose 配置与健康接口检查。
+- Next: 更新 v0.1.10 版本字段与发布说明。
+
+## [2026-05-18 14:13:18 +0800] [Codex] [release-v0-1-10] [DONE]
+- Intent: 将当前 provider 过滤、代理隔离、轻量排障与本地迁移验证收口为 v0.1.10 release，并提交/tag。
+- Scope: 已更新 v0.1.10 版本号、README 版本历史、CHANGELOG、debug bundle 文档与协作日志；重装本地 launchd 并重建 frontend 容器；未改密钥、未重置运行时数据库、未删除 OneDrive 备份目录。
+- Files: AGENTS.md, CHANGELOG.md, README.md, app/adapters/openai_compatible.py, app/main.py, app/repository.py, changes.log, frontend/.eslintrc.cjs, frontend/nginx.conf, frontend/package.json, frontend/package-lock.json, scripts/debug/model_gateway_debug_bundle.sh, tests/test_auth_and_provider_security.py, tests/test_debug_scripts.py, tests/test_openai_compatible_adapter.py
+- Verify: pytest -q -> 52 passed；python -m py_compile app/main.py app/repository.py app/adapters/openai_compatible.py -> passed；bash -n scripts/debug/model_gateway_debug_bundle.sh -> passed；docker compose config -q -> passed；npm run lint -> passed；npm run type-check -> passed；npm run build -> passed；git diff --check -> passed；bash scripts/install_local_gateway_service.sh -> wrapper REPO_ROOT=/Users/xushuchi/Code/stock/model-gateway；docker compose up -d --build frontend -> model-gateway-ui rebuilt from /Users/xushuchi/Code/stock/model-gateway；curl http://127.0.0.1:8080/healthz -> {"status":"ok"}；curl http://127.0.0.1:8620/ -> 200。
+- Next: None

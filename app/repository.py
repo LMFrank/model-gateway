@@ -517,7 +517,8 @@ class PostgresRepository:
                r.created_at, r.updated_at,
                m.id as model_id, m.display_name as model_display_name, 
                m.upstream_model, m.is_active as model_is_active,
-               p.id as provider_id, p.name as provider_name, p.provider_type
+               p.id as provider_id, p.name as provider_name, p.provider_type,
+               p.is_enabled as provider_is_enabled
         FROM model_routes r
         JOIN models m ON r.model_key = m.model_key
         JOIN providers p ON m.provider_id = p.id
@@ -539,7 +540,8 @@ class PostgresRepository:
                r.created_at, r.updated_at,
                m.id as model_id, m.display_name as model_display_name, 
                m.upstream_model, m.is_active as model_is_active,
-               p.id as provider_id, p.name as provider_name, p.provider_type
+               p.id as provider_id, p.name as provider_name, p.provider_type,
+               p.is_enabled as provider_is_enabled
         FROM model_routes r
         JOIN models m ON r.model_key = m.model_key
         JOIN providers p ON m.provider_id = p.id
@@ -608,6 +610,7 @@ class PostgresRepository:
                 "id": row["provider_id"],
                 "name": row["provider_name"],
                 "provider_type": row["provider_type"],
+                "is_enabled": bool(row.get("provider_is_enabled", True)),
             },
         }
 

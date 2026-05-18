@@ -34,7 +34,7 @@ from app.schemas import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("model-gateway")
 
-APP_VERSION = "0.1.9"
+APP_VERSION = "0.1.10"
 SERVICE_NAME = "model-gateway-api"
 PUBLIC_MODEL_OWNER = "model-gateway"
 COMPAT_DEPRECATION_HEADERS = {
@@ -249,6 +249,7 @@ def create_app() -> FastAPI:
             if item.get("is_enabled")
             and item.get("model", {}).get("is_active")
             and item.get("provider")
+            and item.get("provider", {}).get("is_enabled", True)
         ]
         return {
             "object": "list",

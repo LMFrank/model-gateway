@@ -47,3 +47,10 @@
 - 协作沟通默认简体中文。
 - 小步提交，单一主题，不混入无关改动。
 - 提交前至少运行与本次改动相关的检查命令。
+
+## Debug / Observability Triage
+- 当任务涉及“查问题 / debug / 排障 / 生产异常 / 请求失败 / 模型调用失败 / 日志异常 / monitor”时，AI 应先使用只读轻量排障入口收集证据，再提出修复：
+  1. 在本仓库运行：`bash scripts/debug/model_gateway_debug_bundle.sh --recent 15m`。
+  2. 如有请求号，追加：`--request-id <X-Request-Id>`；如按模型定位，追加：`--model <model_key>`。
+  3. 如只需要外部观测源，在 monitor 仓库运行：`DEBUG_SERVICES_REGEX='model-gateway-api|model-gateway-ui' bash scripts/debug_local.sh`。
+- 这些入口只读；不要为排障先重启服务、删除日志或修改数据库。

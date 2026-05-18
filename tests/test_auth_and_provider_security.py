@@ -352,13 +352,19 @@ def test_client_models_endpoint_lists_only_active_models() -> None:
             "model_key": "qwen3-max",
             "is_enabled": True,
             "model": {"display_name": "Qwen3 Max", "is_active": True},
-            "provider": {"name": "bailian_coding_api"},
+            "provider": {"name": "bailian_coding_api", "is_enabled": True},
         },
         {
             "model_key": "disabled-model",
             "is_enabled": False,
             "model": {"display_name": "Disabled", "is_active": True},
-            "provider": {"name": "bailian_api"},
+            "provider": {"name": "bailian_api", "is_enabled": True},
+        },
+        {
+            "model_key": "disabled-provider-model",
+            "is_enabled": True,
+            "model": {"display_name": "Disabled Provider", "is_active": True},
+            "provider": {"name": "disabled_provider", "is_enabled": False},
         },
     ]
     client = TestClient(app)

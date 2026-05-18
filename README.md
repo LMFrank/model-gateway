@@ -1,4 +1,4 @@
-# Model Gateway v0.1.9
+# Model Gateway v0.1.10
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/downloads/)
@@ -6,7 +6,7 @@
 
 **OpenAI 兼容的 LLM 网关，统一管理多个 Provider，将 CLI 工具封装为 API。**
 
-**当前版本**: `v0.1.9`（2026-04-27）
+**当前版本**: `v0.1.10`（2026-05-18）
 
 > ⚠️ **使用提醒**: 使用本项目时请遵守各模型官方的服务条款和使用规则。
 
@@ -248,6 +248,25 @@ docker compose up -d --build
 > - Docker runtime 下，monitor 通过 Docker labels + 网络直接采集 `model-gateway` 容器
 > - 本地 runtime 下，`./scripts/switch_to_local_runtime.sh` / `./scripts/install_local_gateway_service.sh` 会尝试自动写入 monitor 的 `file_sd` target
 > - 若 monitor repo 不在默认位置，可预先设置 `MONITOR_FILE_SD_DIR=/path/to/monitor/app/collector/file_sd`
+
+### Codex / OpenCode 轻量排障入口
+
+当目标是快速定位运行问题，而不是建设完整 APM 时，优先使用只读 debug bundle：
+
+```bash
+bash scripts/debug/model_gateway_debug_bundle.sh --recent 15m
+# 按请求号或模型收窄
+bash scripts/debug/model_gateway_debug_bundle.sh --request-id <X-Request-Id> --recent 30m
+bash scripts/debug/model_gateway_debug_bundle.sh --model <model_key> --status failed --recent 30m
+```
+
+该脚本会聚合 `/healthz`、Prometheus target、`/api/health/summary`、`/admin/calls`、Loki 日志与本地 runtime log；需要 `GATEWAY_ADMIN_TOKEN` 时会从 `.env` 读取但不会打印 token。
+
+仅查看外部观测源时，也可在 monitor 仓库运行：
+
+```bash
+DEBUG_SERVICES_REGEX='model-gateway-api|model-gateway-ui' bash scripts/debug_local.sh
+```
 
 ## 使用示例
 
@@ -530,6 +549,7 @@ API Key 存储在数据库，建议：
 
 ## 版本历史
 
+- `v0.1.10` (2026-05-18): 修复 client-safe `/v1/models` 暴露禁用 Provider 模型的问题；OpenAI-compatible HTTP 调用禁用系统代理继承以稳定部分 OpenAI-compatible 上游连接；新增 Codex/OpenCode 只读 debug bundle 与项目排障规则；完成本地 launchd 与 Docker 容器迁移到 `~/Code` 路径后的健康验证
 - `v0.1.9` (2026-04-27): 新增 Provider 运行参数配置中心；后端增加结构化 `runtime_config/runtime_config_extras` 兼容层并保持 `providers.config_json` 存储不变；前端 Provider 管理页支持结构化编辑超时、重试、endpoint、CLI 命令参数；完成本地生产运行模式重部署与验收验证
 - `v0.1.8` (2026-04-27): 收口私有 provider seed 的明文密钥，统一改为 `psql -v` 变量注入；补充私有 overlay 文档示例；新增 OpenAI 兼容 adapter 瞬时连接重试测试与本地 `PG_HOST=pg -> 127.0.0.1` 回退测试；同步前后端版本号与公开文档去私有化校验
 - `v0.1.7` (2026-04-23): 增加 OpenAI 兼容 adapter 的瞬时连接重试；补齐本地直跑 `PG_HOST=pg -> 127.0.0.1` 兼容；新增 launchd 本地常驻服务与 monitor file_sd / 本地日志采集衔接；同步 README 与 runtime SOP 的本地部署/可观测说明

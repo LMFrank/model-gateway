@@ -68,7 +68,7 @@ class OpenAICompatibleAdapter:
             payload, provider_config, stream=True
         )
 
-        client = httpx.AsyncClient(timeout=timeout)
+        client = httpx.AsyncClient(timeout=timeout, trust_env=False)
         stream_ctx = client.stream("POST", url, headers=headers, json=body)
         response = await stream_ctx.__aenter__()
 
@@ -165,7 +165,7 @@ class OpenAICompatibleAdapter:
 
         for attempt in range(1, max_attempts + 1):
             try:
-                async with httpx.AsyncClient(timeout=timeout) as client:
+                async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
                     return await client.post(url, headers=headers, json=body)
             except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
                 last_error = exc
