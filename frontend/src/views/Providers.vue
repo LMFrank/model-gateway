@@ -123,6 +123,15 @@
           <el-form-item label="上游模型名">
             <el-input v-model="apiRuntimeForm.upstream_model" placeholder="glm-5.1-fp8" />
           </el-form-item>
+          <el-form-item label="强制温度">
+            <el-input-number
+              v-model="apiRuntimeForm.force_temperature"
+              :min="0"
+              :max="2"
+              :step="0.1"
+              placeholder="不覆盖客户端参数"
+            />
+          </el-form-item>
         </template>
 
         <template v-else>
@@ -305,6 +314,7 @@ const summarizeRuntimeConfig = (provider: Provider): string[] => {
   if (typeof config.timeout_sec === 'number') summary.push(`timeout=${config.timeout_sec}s`)
   if (typeof config.connect_retries === 'number') summary.push(`retries=${config.connect_retries}`)
   if (typeof config.upstream_model === 'string' && config.upstream_model) summary.push(`model=${config.upstream_model}`)
+  if (typeof config.force_temperature === 'number') summary.push(`temperature=${config.force_temperature}`)
   if (typeof config.command === 'string' && config.command) summary.push(`cmd=${config.command}`)
   return summary.slice(0, 3)
 }
@@ -367,6 +377,12 @@ const validateRuntimeConfig = (runtimeConfig: ProviderRuntimeConfig) => {
   ) {
     throw new Error('chat_endpoint 必须以 / 开头')
   }
+  if (
+    typeof runtimeConfig.force_temperature === 'number' &&
+    (runtimeConfig.force_temperature < 0 || runtimeConfig.force_temperature > 2)
+  ) {
+    throw new Error('force_temperature 必须在 0 到 2 之间')
+  }
 }
 
 const buildRuntimeConfigForSubmit = (): ProviderRuntimeConfig => {
@@ -377,6 +393,7 @@ const buildRuntimeConfigForSubmit = (): ProviderRuntimeConfig => {
       retry_backoff_sec: apiRuntimeForm.value.retry_backoff_sec,
       chat_endpoint: apiRuntimeForm.value.chat_endpoint,
       upstream_model: apiRuntimeForm.value.upstream_model,
+      force_temperature: apiRuntimeForm.value.force_temperature,
     }) as ProviderRuntimeConfig
   }
 

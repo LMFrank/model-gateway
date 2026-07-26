@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ==========================================================================
@@ -121,6 +121,20 @@ class ModelRouteUpsert(BaseModel):
     is_enabled: bool = True
     priority: int = Field(default=0, ge=0)
     description: str | None = Field(default=None, max_length=255)
+    fallback_provider: str | None = Field(
+        default=None,
+        max_length=64,
+        description="可选 fallback provider；主 provider 调用失败时按顺序尝试。",
+    )
+    fallback_model_key: str | None = Field(default=None, max_length=128)
+
+    @model_validator(mode="after")
+    def _validate_fallback_target(self):
+        if bool(self.fallback_provider) != bool(self.fallback_model_key):
+            raise ValueError(
+                "fallback_provider and fallback_model_key must be configured together"
+            )
+        return self
 
 
 class ModelRoutesUpsertRequest(BaseModel):
@@ -147,6 +161,8 @@ class ModelRouteOut(BaseModel):
     description: str | None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    fallback_provider: str | None = None
+    fallback_model_key: str | None = None
     model: ModelInfo | None = None
     provider: RouteProviderInfo | None = None
 
@@ -170,8 +186,17 @@ class RouteRuleUpsert(BaseModel):
     fallback_provider: str | None = Field(
         default=None,
         max_length=64,
-        description="兼容字段；提交时保持为空，路由引擎只使用 primary_provider。",
+        description="可选 fallback provider；主 provider 调用失败时按顺序尝试。",
     )
+    fallback_model_key: str | None = Field(default=None, max_length=128)
+
+    @model_validator(mode="after")
+    def _validate_fallback_target(self):
+        if bool(self.fallback_provider) != bool(self.fallback_model_key):
+            raise ValueError(
+                "fallback_provider and fallback_model_key must be configured together"
+            )
+        return self
     is_enabled: bool = True
     description: str | None = Field(default=None, max_length=255)
 

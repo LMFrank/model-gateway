@@ -31,7 +31,9 @@ Model Gateway 兼容 OpenAI API 格式，任何支持 OpenAI API 的应用都可
 > 说明：
 > - 客户端调用 `/v1/*` 使用 `GATEWAY_CLIENT_TOKEN`
 > - 管理接口 `/api/*`、`/admin/*` 使用 `GATEWAY_ADMIN_TOKEN`
-> - 兼容字段 `fallback_provider` 当前保持为空，运行时只使用 `primary_provider`
+> - `fallback_provider` 与 `fallback_model_key` 必须成对配置；仅在主 provider 于上游响应
+>   开始前发生连接失败时尝试 fallback。HTTP/鉴权/请求错误和流式响应开始后的错误不切换。
+> - fallback 可通过 `/api/routes` 或私有 seed 配置；`/admin/routes` 仅保留兼容写入能力。
 > - `/admin/providers`、`/admin/routes` 仅作为 deprecated compatibility surface 保留；新接入与日常管理应优先使用 `/api/providers`、`/api/routes`
 
 ## 运行模式建议
@@ -378,6 +380,41 @@ curl -X POST http://localhost:8080/api/routes \
   }'
 ```
 
+配置 fallback 时必须显式指定其模型，避免一个 provider 绑定多个模型时产生不确定路由：
+
+```json
+{
+  "rules": [{
+    "model_key": "new-model",
+    "fallback_provider": "backup-provider",
+    "fallback_model_key": "backup-model"
+  }]
+}
+```
+
+### 删除 Provider 或模型
+
+删除接口由管理台调用，也可直接使用管理 API：
+
+```bash
+curl -X DELETE \
+  -H "Authorization: Bearer ${GATEWAY_ADMIN_TOKEN}" \
+  http://localhost:8080/api/providers/7
+
+curl -X DELETE \
+  -H "Authorization: Bearer ${GATEWAY_ADMIN_TOKEN}" \
+  http://localhost:8080/api/models/34
+```
+
+- 路径参数为整数 ID；鉴权使用管理 token。
+- 成功返回 HTTP 200，正文分别为 `{"message":"provider deleted"}` 或
+  `{"message":"model deleted"}`；目标不存在返回 HTTP 404。
+- 删除 Provider 会在同一事务内删除其模型、关联核心/兼容路由及兼容 Provider
+  配置；删除模型会删除以它作为主模型或 fallback 模型的路由。
+- 历史调用审计不会随 Provider 或模型删除。
+- 前端消费者为 Provider 管理页和模型管理页。回归验证：
+  `pytest -q tests/test_repository_maintenance.py`。
+
 ### 2. 通过管理界面
 
 访问 http://localhost:8620（本地开发态 Vite 为 `http://localhost:3000`），在对应页面添加：
@@ -386,7 +423,7 @@ curl -X POST http://localhost:8080/api/routes \
 3. Routes → 新增路由规则
 
 从 `v0.1.9` 开始，Providers 页面已支持 **运行参数配置中心**：
-- API Provider：可直接编辑 `timeout_sec`、`connect_retries`、`retry_backoff_sec`、`chat_endpoint`、`upstream_model`
+- API Provider：可直接编辑 `timeout_sec`、`connect_retries`、`retry_backoff_sec`、`chat_endpoint`、`upstream_model`、`force_temperature`
 - CLI Provider：可直接编辑 `timeout_sec`、`command`、`args`、`extra_args`、`model_arg`、`prompt_arg`、`stream_arg` 等
 - 仍可通过 “高级扩展(JSON)” 保留未结构化的自定义键
 

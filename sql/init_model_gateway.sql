@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS route_rules (
   model_name VARCHAR(128) PRIMARY KEY,
   primary_provider VARCHAR(64) NOT NULL,
   fallback_provider VARCHAR(64),
+  fallback_model_key VARCHAR(128),
   is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   description VARCHAR(255),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

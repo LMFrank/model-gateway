@@ -18,6 +18,8 @@ export interface RouteRule {
   is_enabled: boolean
   priority: number
   description: string | null
+  fallback_provider: string | null
+  fallback_model_key: string | null
   created_at: string | null
   updated_at: string | null
   model: RouteModelInfo | null
@@ -29,4 +31,6 @@ export interface UpsertRouteRequest {
   is_enabled?: boolean
   priority?: number
   description?: string
+  fallback_provider?: string | null
+  fallback_model_key?: string | null
 }

@@ -55,6 +55,18 @@ class Settings(BaseSettings):
 
     api_key_encryption_key: str = Field(default="", alias="API_KEY_ENCRYPTION_KEY")
     encrypt_api_keys: bool = Field(default=False, alias="ENCRYPT_API_KEYS")
+    audit_capture_bodies: bool = Field(default=False, alias="AUDIT_CAPTURE_BODIES")
+    audit_retention_days: int = Field(default=30, ge=1, alias="AUDIT_RETENTION_DAYS")
+    audit_cleanup_interval_sec: int = Field(
+        default=3600,
+        ge=60,
+        alias="AUDIT_CLEANUP_INTERVAL_SEC",
+    )
+    provider_health_check_interval_sec: int = Field(
+        default=0,
+        ge=0,
+        alias="PROVIDER_HEALTH_CHECK_INTERVAL_SEC",
+    )
 
 
 @lru_cache

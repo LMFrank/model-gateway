@@ -23,6 +23,14 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="Fallback" :min-width="uiTableTokens.routes.providerMinWidth">
+          <template #default="{ row }">
+            <span v-if="row.fallback_provider">
+              {{ row.fallback_provider }} / {{ row.fallback_model_key }}
+            </span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="priority" label="优先级" :width="uiTableTokens.routes.priorityWidth" />
         <el-table-column label="状态" :width="uiTableTokens.routes.statusWidth">
           <template #default="{ row }">

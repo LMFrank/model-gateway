@@ -331,12 +331,54 @@ class PostgresRepository:
                 return cursor.rowcount > 0
 
     def delete_provider(self, provider_id: int) -> bool:
-        """删除 Provider"""
-        sql = "DELETE FROM providers WHERE id = %s"
+        """删除 Provider 及其仍由兼容路由表持有的配置引用。"""
         with self._get_conn() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, (provider_id,))
-                return cursor.rowcount > 0
+            with conn.transaction():
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        WITH target AS (
+                            SELECT p.name AS provider_name, m.model_key
+                            FROM providers p
+                            LEFT JOIN models m ON m.provider_id = p.id
+                            WHERE p.id = %s
+                        )
+                        DELETE FROM route_rules
+                        WHERE model_name IN (
+                            SELECT model_key FROM target WHERE model_key IS NOT NULL
+                        )
+                        OR primary_provider IN (
+                            SELECT provider_name FROM target
+                        )
+                        OR fallback_provider IN (
+                            SELECT provider_name FROM target
+                        )
+                        """,
+                        (provider_id,),
+                    )
+                    cursor.execute(
+                        """
+                        DELETE FROM model_routes
+                        WHERE model_key IN (
+                            SELECT model_key FROM models WHERE provider_id = %s
+                        )
+                        """,
+                        (provider_id,),
+                    )
+                    cursor.execute(
+                        """
+                        DELETE FROM provider_configs
+                        WHERE provider_name = (
+                            SELECT name FROM providers WHERE id = %s
+                        )
+                        """,
+                        (provider_id,),
+                    )
+                    cursor.execute(
+                        "DELETE FROM providers WHERE id = %s",
+                        (provider_id,),
+                    )
+                    return cursor.rowcount > 0
 
     # ==========================================================================
     # Model CRUD
@@ -475,12 +517,35 @@ class PostgresRepository:
                 return cursor.rowcount > 0
 
     def delete_model(self, model_id: int) -> bool:
-        """删除 Model"""
-        sql = "DELETE FROM models WHERE id = %s"
+        """删除 Model 及其主路由或 fallback 路由引用。"""
         with self._get_conn() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, (model_id,))
-                return cursor.rowcount > 0
+            with conn.transaction():
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        WITH target AS (
+                            SELECT model_key FROM models WHERE id = %s
+                        )
+                        DELETE FROM route_rules
+                        WHERE model_name IN (SELECT model_key FROM target)
+                           OR fallback_model_key IN (SELECT model_key FROM target)
+                        """,
+                        (model_id,),
+                    )
+                    cursor.execute(
+                        """
+                        DELETE FROM model_routes
+                        WHERE model_key = (
+                            SELECT model_key FROM models WHERE id = %s
+                        )
+                        """,
+                        (model_id,),
+                    )
+                    cursor.execute(
+                        "DELETE FROM models WHERE id = %s",
+                        (model_id,),
+                    )
+                    return cursor.rowcount > 0
 
     def _model_row_to_dict(self, row: dict[str, Any]) -> dict[str, Any]:
         """将 Model 查询结果转换为字典"""
@@ -518,10 +583,14 @@ class PostgresRepository:
                m.id as model_id, m.display_name as model_display_name, 
                m.upstream_model, m.is_active as model_is_active,
                p.id as provider_id, p.name as provider_name, p.provider_type,
-               p.is_enabled as provider_is_enabled
+               p.is_enabled as provider_is_enabled,
+               rr.fallback_provider,
+               rr.fallback_model_key,
+               rr.is_enabled as compatibility_route_is_enabled
         FROM model_routes r
         JOIN models m ON r.model_key = m.model_key
         JOIN providers p ON m.provider_id = p.id
+        LEFT JOIN route_rules rr ON rr.model_name = r.model_key
         WHERE r.model_key = %s
         LIMIT 1
         """
@@ -541,10 +610,14 @@ class PostgresRepository:
                m.id as model_id, m.display_name as model_display_name, 
                m.upstream_model, m.is_active as model_is_active,
                p.id as provider_id, p.name as provider_name, p.provider_type,
-               p.is_enabled as provider_is_enabled
+               p.is_enabled as provider_is_enabled,
+               rr.fallback_provider,
+               rr.fallback_model_key,
+               rr.is_enabled as compatibility_route_is_enabled
         FROM model_routes r
         JOIN models m ON r.model_key = m.model_key
         JOIN providers p ON m.provider_id = p.id
+        LEFT JOIN route_rules rr ON rr.model_name = r.model_key
         ORDER BY r.priority DESC, r.model_key ASC
         """
         with self._get_conn() as conn:
@@ -585,11 +658,161 @@ class PostgresRepository:
 
     def delete_model_route(self, model_key: str) -> bool:
         """删除路由规则"""
-        sql = "DELETE FROM model_routes WHERE model_key = %s"
         with self._get_conn() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, (model_key,))
-                return cursor.rowcount > 0
+            with conn.transaction():
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM route_rules WHERE model_name = %s",
+                        (model_key,),
+                    )
+                    cursor.execute(
+                        "DELETE FROM model_routes WHERE model_key = %s",
+                        (model_key,),
+                    )
+                    return cursor.rowcount > 0
+
+    def upsert_routes_atomic(self, rules: list[dict[str, Any]]) -> int:
+        """在一个事务中校验并同步核心路由与兼容路由事实。"""
+        if not rules:
+            return 0
+
+        model_route_sql = """
+        INSERT INTO model_routes (model_key, is_enabled, priority, description)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (model_key) DO UPDATE SET
+            is_enabled = EXCLUDED.is_enabled,
+            priority = EXCLUDED.priority,
+            description = EXCLUDED.description,
+            updated_at = NOW()
+        """
+        compatibility_sql = """
+        INSERT INTO route_rules (
+            model_name,
+            primary_provider,
+            fallback_provider,
+            fallback_model_key,
+            is_enabled,
+            description
+        ) VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (model_name) DO UPDATE SET
+            primary_provider = EXCLUDED.primary_provider,
+            fallback_provider = EXCLUDED.fallback_provider,
+            fallback_model_key = EXCLUDED.fallback_model_key,
+            is_enabled = EXCLUDED.is_enabled,
+            description = EXCLUDED.description,
+            updated_at = NOW()
+        """
+
+        with self._get_conn() as conn:
+            with conn.transaction():
+                with conn.cursor() as cursor:
+                    for rule in rules:
+                        model_key = str(
+                            rule.get("model_key") or rule.get("model_name") or ""
+                        ).strip()
+                        cursor.execute(
+                            """
+                            SELECT p.name AS provider_name
+                            FROM models m
+                            JOIN providers p ON p.id = m.provider_id
+                            WHERE m.model_key = %s
+                            LIMIT 1
+                            """,
+                            (model_key,),
+                        )
+                        model_row = cursor.fetchone()
+                        if not model_row:
+                            raise RepositoryError(
+                                f"route requires existing model: {model_key}"
+                            )
+
+                        primary_provider = str(model_row["provider_name"])
+                        requested_primary = str(
+                            rule.get("primary_provider") or primary_provider
+                        ).strip()
+                        if requested_primary != primary_provider:
+                            raise RepositoryError(
+                                "compat route rule cannot change model provider binding; "
+                                f"model {model_key} is bound to {primary_provider}, "
+                                f"not {requested_primary or 'none'}"
+                            )
+
+                        cursor.execute(
+                            """
+                            SELECT fallback_provider, fallback_model_key
+                            FROM route_rules
+                            WHERE model_name = %s
+                            """,
+                            (model_key,),
+                        )
+                        existing_rule = cursor.fetchone() or {}
+                        fallback_was_set = (
+                            "fallback_provider" in rule
+                            or "fallback_model_key" in rule
+                        )
+                        fallback_provider = self._normalize_optional_text(
+                            rule.get("fallback_provider")
+                            if fallback_was_set
+                            else existing_rule.get("fallback_provider")
+                        )
+                        fallback_model_key = self._normalize_optional_text(
+                            rule.get("fallback_model_key")
+                            if fallback_was_set
+                            else existing_rule.get("fallback_model_key")
+                        )
+                        if bool(fallback_provider) != bool(fallback_model_key):
+                            raise RepositoryError(
+                                "fallback_provider and fallback_model_key "
+                                "must be configured together"
+                            )
+                        if fallback_provider:
+                            cursor.execute(
+                                """
+                                SELECT p.name AS provider_name
+                                FROM models m
+                                JOIN providers p ON p.id = m.provider_id
+                                WHERE m.model_key = %s
+                                  AND m.is_active = TRUE
+                                LIMIT 1
+                                """,
+                                (fallback_model_key,),
+                            )
+                            fallback_row = cursor.fetchone()
+                            if not fallback_row:
+                                raise RepositoryError(
+                                    "fallback requires an existing active model: "
+                                    f"{fallback_model_key}"
+                                )
+                            if fallback_row["provider_name"] != fallback_provider:
+                                raise RepositoryError(
+                                    f"fallback model {fallback_model_key} is bound to "
+                                    f"{fallback_row['provider_name']}, not "
+                                    f"{fallback_provider}"
+                                )
+                            if fallback_provider == primary_provider:
+                                raise RepositoryError(
+                                    "fallback provider must differ from primary provider"
+                                )
+
+                        is_enabled = bool(rule.get("is_enabled", True))
+                        priority = int(rule.get("priority", 0))
+                        description = rule.get("description")
+                        cursor.execute(
+                            model_route_sql,
+                            (model_key, is_enabled, priority, description),
+                        )
+                        cursor.execute(
+                            compatibility_sql,
+                            (
+                                model_key,
+                                primary_provider,
+                                fallback_provider,
+                                fallback_model_key,
+                                is_enabled,
+                                description,
+                            ),
+                        )
+        return len(rules)
 
     def _model_route_row_to_dict(self, row: dict[str, Any]) -> dict[str, Any]:
         """将路由规则查询结果转换为字典"""
@@ -612,6 +835,17 @@ class PostgresRepository:
                 "provider_type": row["provider_type"],
                 "is_enabled": bool(row.get("provider_is_enabled", True)),
             },
+            "fallback_provider": self._normalize_optional_text(
+                row.get("fallback_provider")
+            ),
+            "fallback_model_key": self._normalize_optional_text(
+                row.get("fallback_model_key")
+            ),
+            "compatibility_route_is_enabled": (
+                None
+                if row.get("compatibility_route_is_enabled") is None
+                else bool(row.get("compatibility_route_is_enabled"))
+            ),
         }
 
     # ==========================================================================
@@ -629,8 +863,13 @@ class PostgresRepository:
             "primary_provider": rule["provider"]["name"]
             if rule.get("provider")
             else None,
-            "fallback_provider": None,  # 核心路由结构不支持 fallback
-            "is_enabled": rule["is_enabled"] and rule["model"]["is_active"],
+            "fallback_provider": rule.get("fallback_provider"),
+            "fallback_model_key": rule.get("fallback_model_key"),
+            "is_enabled": (
+                rule["is_enabled"]
+                and rule["model"]["is_active"]
+                and rule.get("compatibility_route_is_enabled", True) is not False
+            ),
             "description": rule["description"],
             "created_at": rule["created_at"],
             "updated_at": rule["updated_at"],
@@ -645,8 +884,13 @@ class PostgresRepository:
                 "primary_provider": rule["provider"]["name"]
                 if rule.get("provider")
                 else None,
-                "fallback_provider": None,
-                "is_enabled": rule["is_enabled"] and rule["model"]["is_active"],
+                "fallback_provider": rule.get("fallback_provider"),
+                "fallback_model_key": rule.get("fallback_model_key"),
+                "is_enabled": (
+                    rule["is_enabled"]
+                    and rule["model"]["is_active"]
+                    and rule.get("compatibility_route_is_enabled", True) is not False
+                ),
                 "description": rule["description"],
                 "created_at": rule["created_at"],
                 "updated_at": rule["updated_at"],
@@ -656,33 +900,20 @@ class PostgresRepository:
 
     def upsert_route_rules(self, rules: list[dict[str, Any]]) -> int:
         """批量增改兼容格式的路由规则"""
-        model_route_records = []
-        for rule in rules:
-            model_name = str(rule.get("model_name") or "").strip()
-            primary_provider = str(rule.get("primary_provider") or "").strip()
-            model = self.get_model_by_key(model_name)
-            if not model:
-                raise RepositoryError(
-                    f"compat route rule requires existing model: {model_name}"
-                )
-
-            current_provider = (model.get("provider") or {}).get("name")
-            if current_provider != primary_provider:
-                raise RepositoryError(
-                    "compat route rule cannot change model provider binding; "
-                    f"model {model_name} is bound to {current_provider or 'none'}, "
-                    f"not {primary_provider or 'none'}"
-                )
-
-            model_route_records.append(
+        return self.upsert_routes_atomic(
+            [
                 {
-                    "model_key": model_name,
-                    "is_enabled": bool(rule.get("is_enabled", True)),
+                    "model_key": rule.get("model_name"),
+                    "primary_provider": rule.get("primary_provider"),
+                    "fallback_provider": rule.get("fallback_provider"),
+                    "fallback_model_key": rule.get("fallback_model_key"),
+                    "is_enabled": rule.get("is_enabled", True),
                     "priority": 0,
                     "description": rule.get("description"),
                 }
-            )
-        return self.upsert_model_routes(model_route_records)
+                for rule in rules
+            ]
+        )
 
     def get_provider_config(self, provider_name: str) -> dict[str, Any] | None:
         """获取兼容格式的 Provider 配置"""
@@ -863,6 +1094,21 @@ class PostgresRepository:
             row["route_chain"] = self._json_load(row.get("route_chain")) or []
 
         return {"total": total, "items": items}
+
+    def delete_expired_call_logs(self, retention_days: int) -> int:
+        """删除超过保留期的调用审计记录。"""
+        if retention_days < 1:
+            raise ValueError("retention_days must be at least 1")
+        with self._get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM call_logs
+                    WHERE created_at < NOW() - (%s * INTERVAL '1 day')
+                    """,
+                    (retention_days,),
+                )
+                return cursor.rowcount
 
     def get_usage_summary(
         self, date_from: date | None = None, date_to: date | None = None
@@ -1046,11 +1292,20 @@ class PostgresRepository:
     def get_health_summary(self) -> dict[str, Any]:
         """获取健康检查汇总统计"""
         sql = """
-        SELECT 
+        WITH latest AS (
+            SELECT DISTINCT ON (check_type, target_id)
+                check_type,
+                target_id,
+                status,
+                checked_at
+            FROM health_checks
+            ORDER BY check_type, target_id, checked_at DESC
+        )
+        SELECT
             check_type,
             status,
             COUNT(*) as count
-        FROM health_checks
+        FROM latest
         WHERE checked_at > NOW() - INTERVAL '24 hours'
         GROUP BY check_type, status
         """
@@ -1064,7 +1319,10 @@ class PostgresRepository:
             "models": {"healthy": 0, "unhealthy": 0, "unknown": 0},
         }
         for row in rows:
-            check_type = row["check_type"]
+            check_type = {
+                "provider": "providers",
+                "model": "models",
+            }.get(row["check_type"], row["check_type"])
             status = row["status"]
             count = int(row["count"])
             if check_type in summary and status in summary[check_type]:

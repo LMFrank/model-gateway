@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from app.adapters.base import AdapterError, ProviderConnectionError
 from app.config import Settings
 from app.crypto import generate_key
 from app.main import create_app
@@ -194,8 +195,13 @@ def test_admin_compat_providers_include_deprecation_headers() -> None:
     )
 
 
-def test_admin_routes_reject_fallback_provider() -> None:
+def test_admin_routes_accept_fallback_provider() -> None:
     app = _build_app()
+    captured: dict = {}
+    app.state.repository.upsert_route_rules = lambda rules: captured.update(  # type: ignore[method-assign]
+        {"rules": rules}
+    ) or len(rules)
+    app.state.repository.list_route_rules = lambda: []
     client = TestClient(app)
 
     response = client.post(
@@ -207,13 +213,45 @@ def test_admin_routes_reject_fallback_provider() -> None:
                     "model_name": "demo-model",
                     "primary_provider": "demo-provider",
                     "fallback_provider": "unused-fallback",
+                    "fallback_model_key": "unused-fallback-model",
                 }
             ]
         },
     )
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "fallback_provider is not supported"
+    assert response.status_code == 200
+    assert captured["rules"][0]["fallback_provider"] == "unused-fallback"
+    assert captured["rules"][0]["fallback_model_key"] == "unused-fallback-model"
+    assert response.json() == {"items": []}
+
+
+def test_core_routes_accept_fallback_provider() -> None:
+    app = _build_app()
+    captured: dict = {}
+    app.state.repository.upsert_routes_atomic = lambda rules: captured.update(  # type: ignore[attr-defined]
+        {"rules": rules}
+    ) or len(rules)
+    app.state.repository.list_model_routes = lambda: []
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/routes",
+        headers={"Authorization": "Bearer admin-token"},
+        json={
+            "rules": [
+                {
+                    "model_key": "demo-model",
+                    "fallback_provider": "kimi-code",
+                    "fallback_model_key": "kimi-k3",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["rules"][0]["model_key"] == "demo-model"
+    assert captured["rules"][0]["fallback_provider"] == "kimi-code"
+    assert captured["rules"][0]["fallback_model_key"] == "kimi-k3"
 
 
 def test_admin_routes_reject_provider_binding_change_via_compat_api() -> None:
@@ -333,6 +371,260 @@ def test_client_endpoint_accepts_client_token() -> None:
     body = response.json()
     assert body["model"] == "upstream-demo-model"
     assert body["choices"][0]["message"]["content"] == "ok"
+
+
+def test_client_endpoint_uses_fallback_provider_and_model() -> None:
+    app = _build_app()
+    attempts: list[tuple[str, str]] = []
+    call_logs: list[dict] = []
+
+    class FailingPrimaryAdapter:
+        async def chat(self, payload, provider_config):
+            attempts.append(("primary", payload["model"]))
+            raise ProviderConnectionError("primary connect failed")
+
+    class SuccessfulFallbackAdapter:
+        async def chat(self, payload, provider_config):
+            attempts.append(("fallback", payload["model"]))
+            return {
+                "id": "chatcmpl-fallback",
+                "object": "chat.completion",
+                "model": payload["model"],
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": "fallback-ok",
+                        },
+                    }
+                ],
+            }
+
+    app.state.repository.get_model_by_key = lambda model_key: (
+        {"upstream_model": "k3", "provider": {"name": "kimi-code"}}
+        if model_key == "kimi-k3"
+        else {
+            "upstream_model": "glm-5.2-fp8",
+            "default_params": {},
+            "provider": {"name": "qb-glm52"},
+        }
+    )
+    app.state.repository.get_route_rule = lambda model_key: {
+        "model_name": model_key,
+        "primary_provider": "qb-glm52",
+        "fallback_provider": "kimi-code",
+        "fallback_model_key": "kimi-k3",
+        "is_enabled": True,
+    }
+    app.state.repository.get_provider_config = lambda provider_name: {
+        "config": {"api_key": f"{provider_name}-key"},
+        "is_enabled": True,
+    }
+    app.state.repository.insert_call_log = lambda payload: call_logs.append(payload) or 1
+    app.state.adapter_registry["qb-glm52"] = FailingPrimaryAdapter()
+    app.state.adapter_registry["kimi-code"] = SuccessfulFallbackAdapter()
+
+    client = TestClient(app)
+    response = client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer client-token"},
+        json={"model": "glm-5.2-fp8", "messages": [{"role": "user", "content": "ping"}]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["choices"][0]["message"]["content"] == "fallback-ok"
+    assert attempts == [("primary", "glm-5.2-fp8"), ("fallback", "k3")]
+    assert call_logs[-1]["primary_provider"] == "qb-glm52"
+    assert call_logs[-1]["fallback_provider"] == "kimi-code"
+    assert call_logs[-1]["route_chain"] == ["qb-glm52", "kimi-code"]
+    assert call_logs[-1]["selected_provider"] == "kimi-code"
+
+
+def test_client_endpoint_does_not_fallback_on_non_connection_adapter_error() -> None:
+    app = _build_app()
+    attempts: list[str] = []
+
+    class RejectedPrimaryAdapter:
+        async def chat(self, payload, provider_config):
+            attempts.append("primary")
+            raise AdapterError("openai-compatible upstream error 401: unauthorized")
+
+    class FallbackAdapter:
+        async def chat(self, payload, provider_config):
+            attempts.append("fallback")
+            return {"choices": [{"message": {"content": "unexpected"}}]}
+
+    app.state.repository.get_model_by_key = lambda model_key: {
+        "upstream_model": "primary-model",
+        "default_params": {},
+        "provider": {"name": "primary"},
+    }
+    app.state.repository.get_route_rule = lambda model_key: {
+        "model_name": model_key,
+        "primary_provider": "primary",
+        "fallback_provider": "fallback",
+        "fallback_model_key": "fallback-model",
+        "is_enabled": True,
+    }
+    app.state.repository.get_provider_config = lambda provider_name: {
+        "config": {"api_key": "test"},
+        "is_enabled": True,
+    }
+    app.state.repository.insert_call_log = lambda payload: 1
+    app.state.adapter_registry["primary"] = RejectedPrimaryAdapter()
+    app.state.adapter_registry["fallback"] = FallbackAdapter()
+
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer client-token"},
+        json={"model": "demo", "messages": [{"role": "user", "content": "ping"}]},
+    )
+
+    assert response.status_code == 502
+    assert attempts == ["primary"]
+
+
+def test_client_endpoint_does_not_fallback_on_primary_configuration_error() -> None:
+    app = _build_app()
+    provider_lookups: list[str] = []
+    app.state.repository.get_model_by_key = lambda model_key: {
+        "upstream_model": "primary-model",
+        "default_params": {},
+        "provider": {"name": "primary"},
+    }
+    app.state.repository.get_route_rule = lambda model_key: {
+        "model_name": model_key,
+        "primary_provider": "primary",
+        "fallback_provider": "fallback",
+        "fallback_model_key": "fallback-model",
+        "is_enabled": True,
+    }
+
+    def get_provider_config(provider_name):
+        provider_lookups.append(provider_name)
+        return None
+
+    app.state.repository.get_provider_config = get_provider_config
+    app.state.repository.insert_call_log = lambda payload: 1
+
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer client-token"},
+        json={"model": "demo", "messages": [{"role": "user", "content": "ping"}]},
+    )
+
+    assert response.status_code == 502
+    assert provider_lookups == ["primary"]
+
+
+def test_client_endpoint_applies_model_defaults_without_overriding_client_values() -> None:
+    app = _build_app()
+    captured: dict = {}
+
+    class CapturingAdapter:
+        async def chat(self, payload, provider_config):
+            captured.update(payload)
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    app.state.repository.get_model_by_key = lambda model_key: {
+        "upstream_model": "upstream-demo",
+        "default_params": {"temperature": 0.2, "max_tokens": 100},
+        "provider": {"name": "primary"},
+    }
+    app.state.repository.get_route_rule = lambda model_key: {
+        "model_name": model_key,
+        "primary_provider": "primary",
+        "fallback_provider": None,
+        "fallback_model_key": None,
+        "is_enabled": True,
+    }
+    app.state.repository.get_provider_config = lambda provider_name: {
+        "config": {"api_key": "test"},
+        "is_enabled": True,
+    }
+    app.state.repository.insert_call_log = lambda payload: 1
+    app.state.adapter_registry["primary"] = CapturingAdapter()
+
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer client-token"},
+        json={
+            "model": "demo",
+            "messages": [{"role": "user", "content": "ping"}],
+            "temperature": 0.8,
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["temperature"] == 0.8
+    assert captured["max_tokens"] == 100
+
+
+def test_client_endpoint_does_not_store_message_bodies_by_default() -> None:
+    app = _build_app()
+    call_logs: list[dict] = []
+
+    class DummyAdapter:
+        async def chat(self, payload, provider_config):
+            return {"choices": [{"message": {"content": "secret response"}}]}
+
+    app.state.repository.get_model_by_key = lambda model_key: {
+        "upstream_model": "upstream-demo",
+        "default_params": {},
+        "provider": {"name": "primary"},
+    }
+    app.state.repository.get_route_rule = lambda model_key: {
+        "model_name": model_key,
+        "primary_provider": "primary",
+        "fallback_provider": None,
+        "fallback_model_key": None,
+        "is_enabled": True,
+    }
+    app.state.repository.get_provider_config = lambda provider_name: {
+        "config": {"api_key": "test"},
+        "is_enabled": True,
+    }
+    app.state.repository.insert_call_log = lambda payload: call_logs.append(payload) or 1
+    app.state.adapter_registry["primary"] = DummyAdapter()
+
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer client-token"},
+        json={
+            "model": "demo",
+            "messages": [{"role": "user", "content": "secret prompt"}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert call_logs[-1]["request_body"] is None
+    assert call_logs[-1]["response_body"] is None
+
+
+def test_app_startup_applies_audit_retention_policy() -> None:
+    app = _build_app()
+    captured: list[int] = []
+    app.state.repository.delete_expired_call_logs = (  # type: ignore[method-assign]
+        lambda retention_days: captured.append(retention_days) or 0
+    )
+
+    with TestClient(app):
+        pass
+
+    assert captured == [30]
+
+
+def test_app_starts_periodic_provider_health_checks_when_configured() -> None:
+    app = _build_app()
+    app.state.settings.provider_health_check_interval_sec = 60
+    app.state.repository.delete_expired_call_logs = lambda retention_days: 0
+
+    with TestClient(app):
+        task = getattr(app.state, "provider_health_maintenance_task", None)
+        assert task is not None
+        assert not task.done()
 
 
 def test_client_models_endpoint_requires_client_token() -> None:
@@ -533,14 +825,50 @@ def test_upsert_provider_configs_rejects_unknown_provider_creation() -> None:
 
 def test_upsert_route_rules_requires_existing_model_and_matching_provider() -> None:
     repository = PostgresRepository(Settings())
-    repository.get_model_by_key = lambda model_key: {  # type: ignore[method-assign]
-        "model_key": model_key,
-        "provider": {"name": "current-provider"},
-    }
-    called: dict = {}
-    repository.upsert_model_routes = lambda records: called.update(  # type: ignore[method-assign]
-        {"records": records}
-    ) or len(records)
+    called: dict = {"writes": []}
+
+    class FakeCursor:
+        current_sql = ""
+
+        def execute(self, sql, values=None) -> None:
+            self.current_sql = str(sql)
+            if "INSERT INTO" in self.current_sql:
+                called["writes"].append((self.current_sql, values))
+
+        def fetchone(self):
+            if "FROM models m" in self.current_sql:
+                return {"provider_name": "current-provider"}
+            if "FROM route_rules" in self.current_sql:
+                return None
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeConn:
+        class _Transaction:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def transaction(self):
+            return self._Transaction()
+
+        def cursor(self):
+            return FakeCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    repository._get_conn = lambda: FakeConn()  # type: ignore[method-assign]
 
     with pytest.raises(RepositoryError):
         repository.upsert_route_rules(
@@ -565,11 +893,17 @@ def test_upsert_route_rules_requires_existing_model_and_matching_provider() -> N
     )
 
     assert result == 1
-    assert called["records"] == [
-        {
-            "model_key": "demo-model",
-            "is_enabled": False,
-            "priority": 0,
-            "description": "compat update",
-        }
-    ]
+    assert called["writes"][0][1] == (
+        "demo-model",
+        False,
+        0,
+        "compat update",
+    )
+    assert called["writes"][1][1] == (
+        "demo-model",
+        "current-provider",
+        None,
+        None,
+        False,
+        "compat update",
+    )

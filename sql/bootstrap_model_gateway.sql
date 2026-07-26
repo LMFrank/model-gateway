@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS route_rules (
   model_name VARCHAR(128) PRIMARY KEY,
   primary_provider VARCHAR(64) NOT NULL,
   fallback_provider VARCHAR(64),
+  fallback_model_key VARCHAR(128),
   is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   description VARCHAR(255),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -101,7 +102,7 @@ CREATE TABLE IF NOT EXISTS providers (
 
 CREATE TABLE IF NOT EXISTS models (
   id SERIAL PRIMARY KEY,
-  provider_id INTEGER REFERENCES providers(id) ON DELETE CASCADE,
+  provider_id INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
   model_key VARCHAR(128) UNIQUE NOT NULL,
   display_name VARCHAR(128) NOT NULL,
   upstream_model VARCHAR(128) NOT NULL,

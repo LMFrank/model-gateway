@@ -30,7 +30,7 @@ COMMENT ON COLUMN providers.config_json IS '额外配置参数，CLI 模式下�
 -- models 表（新建）
 CREATE TABLE IF NOT EXISTS models (
   id SERIAL PRIMARY KEY,
-  provider_id INTEGER REFERENCES providers(id) ON DELETE CASCADE,
+  provider_id INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
   model_key VARCHAR(128) UNIQUE NOT NULL,
   display_name VARCHAR(128) NOT NULL,
   upstream_model VARCHAR(128) NOT NULL,

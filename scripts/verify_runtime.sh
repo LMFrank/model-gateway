@@ -50,7 +50,7 @@ export VERIFY_MODE="${MODE}"
 export VERIFY_WITH_STOCK="${WITH_STOCK}"
 export VERIFY_CLIENT_TOKEN="${CLIENT_TOKEN}"
 export VERIFY_ADMIN_TOKEN="${ADMIN_TOKEN}"
-export VERIFY_PUBLIC_SMOKE_MODEL="${VERIFY_PUBLIC_SMOKE_MODEL:-qwen3.6-plus}"
+export VERIFY_PUBLIC_SMOKE_MODEL="${VERIFY_PUBLIC_SMOKE_MODEL:-}"
 export VERIFY_EXTRA_MODELS="${VERIFY_EXTRA_MODELS:-}"
 
 python - <<'PY'
@@ -71,7 +71,7 @@ extra_models = [
     for item in os.environ.get("VERIFY_EXTRA_MODELS", "").split(",")
     if item.strip()
 ]
-smoke_models = [public_smoke_model, *extra_models]
+smoke_models = [item for item in (public_smoke_model, *extra_models) if item]
 
 base = "http://127.0.0.1:8080"
 ui_base = "http://127.0.0.1:8620"
@@ -96,6 +96,9 @@ print("ok healthz")
 
 status, models = fetch_json(f"{base}/v1/models", token=client_token)
 client_models = {item["id"] for item in models.get("data", [])}
+assert client_models, "client-safe model catalog is empty"
+if not smoke_models:
+    smoke_models = [sorted(client_models)[0]]
 for model_key in smoke_models:
     assert model_key in client_models, (model_key, client_models)
 print("ok v1/models")

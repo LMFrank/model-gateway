@@ -93,7 +93,10 @@ curl -H "Authorization: Bearer $GATEWAY_ADMIN_TOKEN" \
 
 - `selected_provider=<private_provider_name>`
 - `model_name=<private_model_key>`
-- 不出现 fallback provider
+- 正常成功时 `selected_provider` 应为主 provider；若主 provider 连接失败，
+  `route_chain` 应包含 fallback provider 且 `selected_provider` 应为 fallback provider
+- fallback 必须同时配置 `fallback_provider` 和 `fallback_model_key`；HTTP/鉴权/请求错误
+  不应触发切换
 
 ---
 
@@ -133,9 +136,20 @@ curl http://localhost:8080/healthz
 
 ```bash
 git diff --check
-pytest -q tests/test_main_helpers.py
-python -m py_compile app/main.py app/repository.py
+pytest -q
+python -m compileall -q app tests scripts
+cd frontend && npm test && npm run type-check && npm run build
 ```
+
+本次 worktree 启用显式 fallback 模型前，目标数据库必须先执行公共结构迁移：
+
+```bash
+psql "$MODEL_GATEWAY_DATABASE_URL" \
+  -f sql/migrations/v0.3.4_add_explicit_fallback_target.sql
+```
+
+迁移会在发现孤儿模型时直接失败；先修复 `models.provider_id IS NULL`，不要跳过约束。
+私有 provider、endpoint 与 fallback seed 继续留在 `sql/private/`，不得移入公共迁移。
 
 如果本次改动涉及前端反代：
 

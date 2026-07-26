@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from app.adapters.base import AdapterError, StreamHandle
+from app.adapters.base import AdapterError, ProviderConnectionError, StreamHandle
 from app.config import Settings
 
 ALLOWED_CHAT_FIELDS = {
@@ -68,9 +68,37 @@ class OpenAICompatibleAdapter:
             payload, provider_config, stream=True
         )
 
-        client = httpx.AsyncClient(timeout=timeout, trust_env=False)
-        stream_ctx = client.stream("POST", url, headers=headers, json=body)
-        response = await stream_ctx.__aenter__()
+        retries, backoff_sec = self._retry_settings(provider_config)
+        max_attempts = retries + 1
+        client: httpx.AsyncClient | None = None
+        stream_ctx = None
+        response = None
+        last_error: httpx.HTTPError | None = None
+        for attempt in range(1, max_attempts + 1):
+            client = httpx.AsyncClient(timeout=timeout, trust_env=False)
+            stream_ctx = client.stream("POST", url, headers=headers, json=body)
+            try:
+                response = await stream_ctx.__aenter__()
+                break
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                last_error = exc
+                await client.aclose()
+                if attempt >= max_attempts:
+                    raise ProviderConnectionError(
+                        "openai-compatible upstream stream connect failed "
+                        f"after {max_attempts} attempts: {exc.__class__.__name__}"
+                    ) from exc
+                await asyncio.sleep(backoff_sec * attempt)
+            except Exception:
+                await client.aclose()
+                raise
+
+        if client is None or stream_ctx is None or response is None:
+            raise ProviderConnectionError(
+                "openai-compatible upstream stream connect failed "
+                f"after {max_attempts} attempts: "
+                f"{last_error.__class__.__name__ if last_error else 'unknown'}"
+            )
 
         if response.status_code >= 400:
             text = (await response.aread()).decode("utf-8", errors="ignore")
@@ -123,6 +151,10 @@ class OpenAICompatibleAdapter:
             if key in ALLOWED_CHAT_FIELDS:
                 body[key] = value
 
+        force_temperature = provider_config.get("force_temperature")
+        if force_temperature is not None:
+            body["temperature"] = float(force_temperature)
+
         body["stream"] = stream
         upstream_model = provider_config.get("upstream_model")
         if upstream_model:
@@ -152,15 +184,8 @@ class OpenAICompatibleAdapter:
         timeout: float,
         provider_config: dict[str, Any],
     ) -> httpx.Response:
-        retries = int(
-            provider_config.get("connect_retries", self.DEFAULT_CONNECT_RETRIES)
-            or self.DEFAULT_CONNECT_RETRIES
-        )
-        backoff_sec = float(
-            provider_config.get("retry_backoff_sec", self.DEFAULT_RETRY_BACKOFF_SEC)
-            or self.DEFAULT_RETRY_BACKOFF_SEC
-        )
-        max_attempts = max(1, retries + 1)
+        retries, backoff_sec = self._retry_settings(provider_config)
+        max_attempts = retries + 1
         last_error: httpx.HTTPError | None = None
 
         for attempt in range(1, max_attempts + 1):
@@ -173,7 +198,24 @@ class OpenAICompatibleAdapter:
                     break
                 await asyncio.sleep(backoff_sec * attempt)
 
-        raise AdapterError(
+        raise ProviderConnectionError(
             "openai-compatible upstream connect failed "
             f"after {max_attempts} attempts: {last_error.__class__.__name__ if last_error else 'unknown'}"
         )
+
+    def _retry_settings(
+        self, provider_config: dict[str, Any]
+    ) -> tuple[int, float]:
+        raw_retries = provider_config.get("connect_retries")
+        raw_backoff = provider_config.get("retry_backoff_sec")
+        retries = (
+            self.DEFAULT_CONNECT_RETRIES
+            if raw_retries is None
+            else max(0, int(raw_retries))
+        )
+        backoff_sec = (
+            self.DEFAULT_RETRY_BACKOFF_SEC
+            if raw_backoff is None
+            else max(0.0, float(raw_backoff))
+        )
+        return retries, backoff_sec

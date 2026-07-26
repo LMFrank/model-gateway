@@ -1,4 +1,4 @@
-# Model Gateway v0.1.10
+# Model Gateway v0.1.12
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/downloads/)
@@ -6,7 +6,7 @@
 
 **OpenAI 兼容的 LLM 网关，统一管理多个 Provider，将 CLI 工具封装为 API。**
 
-**当前版本**: `v0.1.10`（2026-05-18）
+**当前版本**: `v0.1.12`（2026-07-26）
 
 > ⚠️ **使用提醒**: 使用本项目时请遵守各模型官方的服务条款和使用规则。
 
@@ -435,7 +435,11 @@ models = [m["id"] for m in response.json()["data"]]
 > 所有管理接口都要求 `Authorization: Bearer ${GATEWAY_ADMIN_TOKEN}`。  
 > 前端管理台会在首次 401 时提示输入 admin token，也可在构建时注入 `VITE_GATEWAY_ADMIN_TOKEN`。
 >
-> 路由 fallback 说明：兼容字段 `fallback_provider` 当前保持为空，运行时只使用 `primary_provider`。
+>
+> 路由 fallback 说明：`fallback_provider` 与 `fallback_model_key` 必须成对配置。
+> 仅当主 provider 在上游响应开始前发生连接失败时才切换；上游 HTTP 错误、鉴权错误、
+> 请求错误以及流式响应开始后的错误都不会切换。fallback 模型必须存在、处于 active
+> 状态且确实绑定到指定 fallback provider。可通过核心 `/api/routes` 或私有 seed 配置。
 >
 > 兼容层说明：`/admin/providers` 与 `/admin/routes` 仅作为 **deprecated compatibility surface** 保留。
 > - 创建 / 删除 provider 请使用核心 `/api/providers`
@@ -443,9 +447,14 @@ models = [m["id"] for m in response.json()["data"]]
 > - 兼容层响应会返回 `X-Model-Gateway-Compat: deprecated`
 
 Provider 管理页现已内置 **运行参数配置中心**：
-- API Provider 可直接编辑 `timeout_sec`、`connect_retries`、`retry_backoff_sec`、`chat_endpoint`、`upstream_model`
+- API Provider 可直接编辑 `timeout_sec`、`connect_retries`、`retry_backoff_sec`、`chat_endpoint`、`upstream_model`、`force_temperature`
 - CLI Provider 可直接编辑 `timeout_sec`、`command`、`args`、`extra_args`、`model_arg`、`prompt_arg`、`stream_arg`、`stdin_prompt_arg`、`response_file` 等运行参数
 - 高级扩展参数仍保留在 “高级扩展(JSON)” 区域，保存时会与结构化运行参数合并写回 `providers.config_json`
+
+模型的 `default_params` 会先作为请求默认值合入，客户端显式参数拥有更高优先级。
+调用审计默认不保存请求/响应正文，并按 `AUDIT_RETENTION_DAYS` 周期清理；只有明确设置
+`AUDIT_CAPTURE_BODIES=true` 时才记录截断后的正文。设置
+`PROVIDER_HEALTH_CHECK_INTERVAL_SEC` 为正数可启用周期性 Provider 健康检查。
 
 ## 发布前闭环验证清单
 
@@ -549,6 +558,7 @@ API Key 存储在数据库，建议：
 
 ## 版本历史
 
+- `v0.1.12` (2026-07-26): 收紧连接失败 fallback 语义并要求显式 fallback 模型；补齐流式连接重试、Provider 运行参数、模型默认参数、审计保留与周期健康检查；修复 Provider/Model 删除时的路由外键 500；前端补齐删除确认框样式、fallback/force temperature 展示和 CI 全量门禁
 - `v0.1.10` (2026-05-18): 修复 client-safe `/v1/models` 暴露禁用 Provider 模型的问题；OpenAI-compatible HTTP 调用禁用系统代理继承以稳定部分 OpenAI-compatible 上游连接；新增 Codex/OpenCode 只读 debug bundle 与项目排障规则；完成本地 launchd 与 Docker 容器迁移到 `~/Code` 路径后的健康验证
 - `v0.1.9` (2026-04-27): 新增 Provider 运行参数配置中心；后端增加结构化 `runtime_config/runtime_config_extras` 兼容层并保持 `providers.config_json` 存储不变；前端 Provider 管理页支持结构化编辑超时、重试、endpoint、CLI 命令参数；完成本地生产运行模式重部署与验收验证
 - `v0.1.8` (2026-04-27): 收口私有 provider seed 的明文密钥，统一改为 `psql -v` 变量注入；补充私有 overlay 文档示例；新增 OpenAI 兼容 adapter 瞬时连接重试测试与本地 `PG_HOST=pg -> 127.0.0.1` 回退测试；同步前后端版本号与公开文档去私有化校验

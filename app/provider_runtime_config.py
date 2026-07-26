@@ -19,6 +19,7 @@ class ApiProviderRuntimeConfig(BaseModel):
     retry_backoff_sec: float | None = Field(default=None, ge=0, le=60)
     chat_endpoint: str | None = Field(default=None, min_length=1, max_length=128)
     upstream_model: str | None = Field(default=None, min_length=1, max_length=128)
+    force_temperature: float | None = Field(default=None, ge=0, le=2)
 
     @field_validator("chat_endpoint")
     @classmethod

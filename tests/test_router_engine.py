@@ -10,12 +10,14 @@ def test_router_engine_exact_match_success() -> None:
             "model_name": "kimi-for-coding",
             "primary_provider": "kimi_cli",
             "fallback_provider": "qwen_api",
+            "fallback_model_key": "qwen3.6-plus",
             "is_enabled": True,
         },
     )
     assert decision.primary_provider == "kimi_cli"
-    assert decision.fallback_provider is None
-    assert decision.provider_chain == ["kimi_cli"]
+    assert decision.fallback_provider == "qwen_api"
+    assert getattr(decision, "fallback_model_key", None) == "qwen3.6-plus"
+    assert decision.provider_chain == ["kimi_cli", "qwen_api"]
 
 
 def test_router_engine_disabled_rule() -> None:

@@ -76,3 +76,12 @@ def test_merge_runtime_config_rejects_invalid_timeout() -> None:
 def test_merge_runtime_config_rejects_invalid_chat_endpoint() -> None:
     with pytest.raises(ProviderRuntimeConfigError):
         merge_runtime_config("api", runtime_config={"chat_endpoint": "chat/completions"})
+
+
+def test_merge_runtime_config_accepts_forced_temperature() -> None:
+    merged = merge_runtime_config(
+        "api",
+        runtime_config={"force_temperature": 1},
+    )
+
+    assert merged == {"force_temperature": 1.0}

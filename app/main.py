@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
+from contextlib import suppress
 from datetime import date
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from app.adapters import KimiCliAdapter, OpenAICompatibleAdapter
-from app.adapters.base import AdapterError
+from app.adapters.base import AdapterError, ProviderConnectionError
 from app.auth import require_admin_auth, require_client_auth
 from app.config import get_settings
 from app.provider_runtime_config import ProviderRuntimeConfigError, merge_runtime_config
@@ -174,6 +177,67 @@ def create_app() -> FastAPI:
     app.state.adapter_registry = adapter_registry
     app.state.router_engine = router_engine
 
+    async def cleanup_expired_audit_logs() -> None:
+        try:
+            deleted = await run_in_threadpool(
+                repository.delete_expired_call_logs,
+                settings.audit_retention_days,
+            )
+            if deleted:
+                logger.info("expired_call_logs_deleted count=%s", deleted)
+        except Exception:  # noqa: BLE001
+            logger.exception("expired_call_logs_cleanup_failed")
+
+    async def audit_maintenance_loop() -> None:
+        while True:
+            await asyncio.sleep(settings.audit_cleanup_interval_sec)
+            await cleanup_expired_audit_logs()
+
+    async def provider_health_maintenance_loop() -> None:
+        while True:
+            await asyncio.sleep(settings.provider_health_check_interval_sec)
+            try:
+                providers = await run_in_threadpool(repository.list_providers)
+            except Exception:  # noqa: BLE001
+                logger.exception("periodic_provider_list_failed")
+                continue
+            for provider in providers:
+                if not provider.get("is_enabled", True):
+                    continue
+                try:
+                    await check_provider_health(int(provider["id"]))
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "periodic_provider_health_check_failed provider=%s",
+                        provider.get("name"),
+                    )
+
+    async def start_maintenance() -> None:
+        await cleanup_expired_audit_logs()
+        app.state.audit_maintenance_task = asyncio.create_task(
+            audit_maintenance_loop()
+        )
+        if settings.provider_health_check_interval_sec > 0:
+            app.state.provider_health_maintenance_task = asyncio.create_task(
+                provider_health_maintenance_loop()
+            )
+
+    async def stop_maintenance() -> None:
+        tasks = [
+            getattr(app.state, "audit_maintenance_task", None),
+            getattr(app.state, "provider_health_maintenance_task", None),
+        ]
+        for task in tasks:
+            if task is not None:
+                task.cancel()
+        for task in tasks:
+            if task is not None:
+                with suppress(asyncio.CancelledError):
+                    await task
+
+    app.add_event_handler("startup", start_maintenance)
+    app.add_event_handler("shutdown", stop_maintenance)
+
     async def safe_insert_call_log(log_payload: dict[str, Any]) -> None:
         try:
             await run_in_threadpool(repository.insert_call_log, log_payload)
@@ -268,7 +332,7 @@ def create_app() -> FastAPI:
     async def list_routes() -> JSONResponse:
         items = await run_in_threadpool(repository.list_route_rules)
         return JSONResponse(
-            content={"items": items},
+            content=jsonable_encoder({"items": items}),
             headers=COMPAT_DEPRECATION_HEADERS,
         )
 
@@ -276,11 +340,6 @@ def create_app() -> FastAPI:
     async def upsert_routes(body: RouteRulesUpsertRequest) -> JSONResponse:
         if not body.rules:
             raise HTTPException(status_code=400, detail="rules cannot be empty")
-        if any(item.fallback_provider for item in body.rules):
-            raise HTTPException(
-                status_code=400,
-                detail="fallback_provider is not supported",
-            )
         try:
             await run_in_threadpool(
                 repository.upsert_route_rules, [item.model_dump() for item in body.rules]
@@ -289,7 +348,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         items = await run_in_threadpool(repository.list_route_rules)
         return JSONResponse(
-            content={"items": items},
+            content=jsonable_encoder({"items": items}),
             headers=COMPAT_DEPRECATION_HEADERS,
         )
 
@@ -419,9 +478,13 @@ def create_app() -> FastAPI:
     ) -> ModelRoutesListResponse:
         if not body.rules:
             raise HTTPException(status_code=400, detail="rules cannot be empty")
-        await run_in_threadpool(
-            repository.upsert_model_routes, [item.model_dump() for item in body.rules]
-        )
+        try:
+            await run_in_threadpool(
+                repository.upsert_routes_atomic,
+                [item.model_dump(exclude_unset=True) for item in body.rules],
+            )
+        except RepositoryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         items = await run_in_threadpool(repository.list_model_routes)
         return ModelRoutesListResponse(items=items)
 
@@ -673,7 +736,7 @@ def create_app() -> FastAPI:
         if adapter:
             try:
                 async with asyncio.timeout(30):
-                    resp = await adapter.chat(
+                    await adapter.chat(
                         test_payload,
                         _provider_runtime_config(provider_config),
                     )
@@ -761,8 +824,14 @@ def create_app() -> FastAPI:
         # Get model info to retrieve upstream_model
         model_info = await run_in_threadpool(repository.get_model_by_key, model_name)
         upstream_model = model_info.get("upstream_model") if model_info else None
+        default_params = (
+            model_info.get("default_params")
+            if isinstance(model_info, dict)
+            and isinstance(model_info.get("default_params"), dict)
+            else {}
+        )
 
-        # Replace model in payload with upstream_model if available
+        payload = {**default_params, **payload}
         if upstream_model:
             payload = {**payload, "model": upstream_model}
 
@@ -796,7 +865,7 @@ def create_app() -> FastAPI:
                     "total_tokens": None,
                     "latency_ms": latency_ms,
                     "is_stream": is_stream,
-                    "request_body": payload,
+                    "request_body": payload if settings.audit_capture_bodies else None,
                     "response_body": None,
                 }
             )
@@ -814,10 +883,10 @@ def create_app() -> FastAPI:
                     "provider_config_fetch_failed provider=%s", provider_name
                 )
                 errors.append(f"{provider_name}: provider config unavailable ({exc})")
-                continue
+                break
             if not provider_row or not provider_row.get("is_enabled", True):
                 errors.append(f"{provider_name}: provider config missing or disabled")
-                continue
+                break
 
             provider_config = provider_row.get("config") or {}
             adapter = _resolve_adapter(
@@ -828,12 +897,47 @@ def create_app() -> FastAPI:
             )
             if adapter is None:
                 errors.append(f"{provider_name}: adapter is not supported")
-                continue
+                break
+
+            provider_payload = payload
+            if provider_name != decision.primary_provider:
+                try:
+                    fallback_model = await run_in_threadpool(
+                        repository.get_model_by_key, decision.fallback_model_key
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "fallback_model_fetch_failed provider=%s", provider_name
+                    )
+                    errors.append(
+                        f"{provider_name}: fallback model unavailable ({exc})"
+                    )
+                    continue
+                if not fallback_model:
+                    errors.append(
+                        f"{provider_name}: configured fallback model is unavailable"
+                    )
+                    continue
+                fallback_model_provider = (
+                    fallback_model.get("provider") or {}
+                ).get("name")
+                if fallback_model_provider != provider_name:
+                    errors.append(
+                        f"{provider_name}: fallback model belongs to "
+                        f"{fallback_model_provider or 'no provider'}"
+                    )
+                    continue
+                fallback_upstream_model = fallback_model.get("upstream_model")
+                if fallback_upstream_model:
+                    provider_payload = {
+                        **payload,
+                        "model": fallback_upstream_model,
+                    }
 
             try:
                 if is_stream:
                     stream_handle = await adapter.prepare_stream(
-                        payload, provider_config
+                        provider_payload, provider_config
                     )
 
                     async def stream_wrapper(
@@ -870,7 +974,9 @@ def create_app() -> FastAPI:
                                     "total_tokens": None,
                                     "latency_ms": latency_ms,
                                     "is_stream": True,
-                                    "request_body": payload,
+                                    "request_body": (
+                                        payload if settings.audit_capture_bodies else None
+                                    ),
                                     "response_body": None,
                                 }
                             )
@@ -879,7 +985,9 @@ def create_app() -> FastAPI:
                         stream_wrapper(), media_type="text/event-stream"
                     )
 
-                response_payload = await adapter.chat(payload, provider_config)
+                response_payload = await adapter.chat(
+                    provider_payload, provider_config
+                )
                 prompt_tokens, completion_tokens, total_tokens = _extract_usage(
                     response_payload
                 )
@@ -903,17 +1011,28 @@ def create_app() -> FastAPI:
                         "total_tokens": total_tokens,
                         "latency_ms": latency_ms,
                         "is_stream": False,
-                        "request_body": payload,
-                        "response_body": response_payload,
+                        "request_body": (
+                            payload if settings.audit_capture_bodies else None
+                        ),
+                        "response_body": (
+                            response_payload
+                            if settings.audit_capture_bodies
+                            else None
+                        ),
                     }
                 )
 
                 return JSONResponse(response_payload)
+            except ProviderConnectionError as exc:
+                errors.append(f"{provider_name}: {_format_provider_error(exc)}")
+                continue
             except AdapterError as exc:
                 errors.append(f"{provider_name}: {_format_provider_error(exc)}")
+                break
             except Exception as exc:  # noqa: BLE001
                 logger.exception("provider request failed: %s", provider_name)
                 errors.append(f"{provider_name}: {_format_provider_error(exc)}")
+                break
 
         latency_ms = int((time.perf_counter() - started_at) * 1000)
         error_text = " | ".join(errors) if errors else "all providers failed"
@@ -936,7 +1055,7 @@ def create_app() -> FastAPI:
                 "total_tokens": None,
                 "latency_ms": latency_ms,
                 "is_stream": is_stream,
-                "request_body": payload,
+                "request_body": payload if settings.audit_capture_bodies else None,
                 "response_body": None,
             }
         )

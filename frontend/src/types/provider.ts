@@ -7,6 +7,7 @@ export interface ApiRuntimeConfig {
   retry_backoff_sec?: number
   chat_endpoint?: string
   upstream_model?: string
+  force_temperature?: number
 }
 
 export interface CliRuntimeConfig {
