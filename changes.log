@@ -17,3 +17,17 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Verify: 验证命令与结果摘要
 - Next: 下一步动作（若 DONE 可写 `None`）
 ```
+
+## [2026-07-28 14:31 CST] [Codex] [QZ-GLM52-RUNTIME-001] [START]
+- Intent: 将用户指定的 qz-glm52 OpenAI 兼容 provider、glm-5.2-fp8 模型与现有模型路由安全同步到 model-gateway，并验证 StockAgents PRE 容器经 gateway 调用成功。
+- Scope: 仅更新 model-gateway 私有运行时配置与必要协作记录；不把真实 API Key 写入仓库 seed/文档，不增加代理或 fallback，不改其他模型路由。
+- Files: changes.log；model-gateway PostgreSQL 私有运行时配置
+- Verify: 待执行 provider/model health、gateway chat smoke、StockAgents PRE 容器 Kimi smoke。
+- Next: 只读导出当前 provider/model/route 配置并生成最小幂等更新。
+
+## [2026-07-28 14:35 CST] [Codex] [QZ-GLM52-RUNTIME-001] [DONE]
+- Intent: 确认并统一 `Kimi -> model-gateway -> qz-glm52 -> glm-5.2-fp8` 生产链路。
+- Scope: 只读核验发现 qz provider、模型和主路由已是目标终态，因此未重复写运行数据库；未增加代理、fallback 或原始 URL 直连。
+- Files: changes.log
+- Verify: gateway `/healthz=200`，provider health=`3 healthy/0 unhealthy`；`glm-5.2-fp8` 最近调用审计显示 `primary_provider=selected_provider=qz-glm52`、`fallback_provider=null`、HTTP 200；宿主与 StockAgents PRE 容器 Kimi smoke 均成功。
+- Next: StockAgents 继续使用只读 Kimi 配置中的 `zs/GLM-5.2` alias，经 `model-gateway.localhost:8080` 调用。
