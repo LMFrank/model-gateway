@@ -31,3 +31,17 @@ AI 协作过程日志（append-only），与版本发布日志分离。
 - Files: changes.log
 - Verify: gateway `/healthz=200`，provider health=`3 healthy/0 unhealthy`；`glm-5.2-fp8` 最近调用审计显示 `primary_provider=selected_provider=qz-glm52`、`fallback_provider=null`、HTTP 200；宿主与 StockAgents PRE 容器 Kimi smoke 均成功。
 - Next: StockAgents 继续使用只读 Kimi 配置中的 `zs/GLM-5.2` alias，经 `model-gateway.localhost:8080` 调用。
+
+## [2026-07-28 18:42 CST] [Codex] [ZS-KIMI-K3-ALIGN-001] [START]
+- Intent: 为 StockAgents 全工作流提供明确的 `Kimi-K3` 模型键，并将其单一路由到现有健康 provider `zs`。
+- Scope: 新增或幂等更新 `Kimi-K3 -> zs/Kimi-K3`；不修改其他模型路由、不增加 fallback、不记录或输出私有 API Key。
+- Files: changes.log；model-gateway PostgreSQL 私有运行时模型与路由配置
+- Verify: 待执行模型/路由只读复核、provider health、gateway chat smoke 与调用审计。
+- Next: 读取 OpenAPI 写入契约，并对模型和路由执行幂等更新。
+
+## [2026-07-28 21:09 CST] [Codex] [ZS-KIMI-K3-ALIGN-001] [DONE]
+- Intent: 提供 StockAgents 统一使用的 zs `Kimi-K3` 模型与单一路由。
+- Scope: 已新增 `Kimi-K3` 模型键并路由到 provider `zs` 的 upstream `Kimi-K3`；fallback provider/model 均为空，其他模型与路由未修改。
+- Files: changes.log；model-gateway PostgreSQL 私有运行时模型与路由配置
+- Verify: `/healthz=ok`，gateway chat smoke=`OK`；PRE 宏观、300757、compiler 与生产宏观真实调用审计均为 `model=Kimi-K3`、`primary_provider=selected_provider=zs`、HTTP 200、fallback=null。生产宏观最终调用耗时约 155.7 秒并成功。
+- Next: None
