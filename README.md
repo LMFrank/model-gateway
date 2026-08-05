@@ -226,9 +226,17 @@ curl -H "Authorization: Bearer $GATEWAY_ADMIN_TOKEN" http://localhost:8080/api/p
 - `model-gateway` API 服务
   - `service=model-gateway-api`
   - 暴露 `/metrics`
+  - `model_gateway_calls_total{route,provider,model,outcome}`：完成调用数
+  - `model_gateway_call_duration_seconds{route,provider,model,outcome}`：端到端调用耗时
+  - `model_gateway_tokens_total{route,provider,model,direction}`：上游明确返回的
+    prompt/completion token
 - `model-gateway-ui` 前端服务
   - `service=model-gateway-ui`
   - 默认仅采集日志，不暴露 Prometheus metrics
+
+这些业务指标只使用受配置约束的 route、provider、model 和枚举状态。`task_id`、
+股票代码、请求号、错误全文与凭据不会进入 Prometheus label；需要逐请求定位时继续
+使用调用审计或 Loki。
 
 接入方式：
 

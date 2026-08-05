@@ -19,7 +19,7 @@ launchctl bootout "gui/$(id -u)/${SERVICE_LABEL}" >/dev/null 2>&1 || true
 "${REPO_ROOT}/scripts/stop_local_gateway_background.sh"
 "${REPO_ROOT}/scripts/start_local_gateway_background.sh"
 
-python - <<'PY'
+python3 - <<'PY'
 import json
 import time
 import urllib.request

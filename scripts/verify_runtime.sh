@@ -31,14 +31,14 @@ fi
 
 cd "${REPO_ROOT}"
 
-CLIENT_TOKEN="$(python - <<'PY'
+CLIENT_TOKEN="$(python3 - <<'PY'
 from pathlib import Path
 for line in Path('.env').read_text().splitlines():
     if line.startswith('GATEWAY_CLIENT_TOKEN='):
         print(line.split('=',1)[1]); break
 PY
 )"
-ADMIN_TOKEN="$(python - <<'PY'
+ADMIN_TOKEN="$(python3 - <<'PY'
 from pathlib import Path
 for line in Path('.env').read_text().splitlines():
     if line.startswith('GATEWAY_ADMIN_TOKEN='):
@@ -53,7 +53,7 @@ export VERIFY_ADMIN_TOKEN="${ADMIN_TOKEN}"
 export VERIFY_PUBLIC_SMOKE_MODEL="${VERIFY_PUBLIC_SMOKE_MODEL:-}"
 export VERIFY_EXTRA_MODELS="${VERIFY_EXTRA_MODELS:-}"
 
-python - <<'PY'
+python3 - <<'PY'
 import json
 import os
 import time

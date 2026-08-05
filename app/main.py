@@ -54,6 +54,55 @@ HTTP_REQUEST_DURATION_SECONDS = Histogram(
     "HTTP request latency in seconds.",
     ["service", "method", "path"],
 )
+MODEL_GATEWAY_CALLS_TOTAL = Counter(
+    "model_gateway_calls_total",
+    "Completed model gateway calls by route, provider, model, and outcome.",
+    ["route", "provider", "model", "outcome"],
+)
+MODEL_GATEWAY_CALL_DURATION_SECONDS = Histogram(
+    "model_gateway_call_duration_seconds",
+    "End-to-end model gateway call duration in seconds.",
+    ["route", "provider", "model", "outcome"],
+    buckets=(0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600),
+)
+MODEL_GATEWAY_TOKENS_TOTAL = Counter(
+    "model_gateway_tokens_total",
+    "Model gateway tokens by route, provider, model, and direction.",
+    ["route", "provider", "model", "direction"],
+)
+
+
+def _observe_gateway_call(
+    *,
+    route: str,
+    provider: str | None,
+    model: str | None,
+    outcome: str,
+    duration_seconds: float,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+) -> None:
+    labels = {
+        "route": str(route or "").strip() or "unknown",
+        "provider": str(provider or "").strip() or "none",
+        "model": str(model or "").strip() or "unknown",
+        "outcome": str(outcome or "").strip() or "unknown",
+    }
+    MODEL_GATEWAY_CALLS_TOTAL.labels(**labels).inc()
+    MODEL_GATEWAY_CALL_DURATION_SECONDS.labels(**labels).observe(
+        max(0.0, float(duration_seconds))
+    )
+    token_labels = {
+        key: value for key, value in labels.items() if key != "outcome"
+    }
+    if prompt_tokens is not None:
+        MODEL_GATEWAY_TOKENS_TOTAL.labels(
+            **token_labels, direction="prompt"
+        ).inc(max(0, int(prompt_tokens)))
+    if completion_tokens is not None:
+        MODEL_GATEWAY_TOKENS_TOTAL.labels(
+            **token_labels, direction="completion"
+        ).inc(max(0, int(completion_tokens)))
 
 
 def _extract_usage(
@@ -820,6 +869,7 @@ def create_app() -> FastAPI:
         started_at = time.perf_counter()
         attempted_chain: list[str] = []
         errors: list[str] = []
+        last_attempted_model = model_name
 
         # Get model info to retrieve upstream_model
         model_info = await run_in_threadpool(repository.get_model_by_key, model_name)
@@ -846,7 +896,8 @@ def create_app() -> FastAPI:
         try:
             decision = router_engine.decide(model_name, route_rule)
         except RouteNotFoundError as exc:
-            latency_ms = int((time.perf_counter() - started_at) * 1000)
+            duration_seconds = time.perf_counter() - started_at
+            latency_ms = int(duration_seconds * 1000)
             await safe_insert_call_log(
                 {
                     "request_id": request_id,
@@ -868,6 +919,13 @@ def create_app() -> FastAPI:
                     "request_body": payload if settings.audit_capture_bodies else None,
                     "response_body": None,
                 }
+            )
+            _observe_gateway_call(
+                route="unmatched",
+                provider=None,
+                model=None,
+                outcome="route_not_found",
+                duration_seconds=duration_seconds,
             )
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -933,6 +991,9 @@ def create_app() -> FastAPI:
                         **payload,
                         "model": fallback_upstream_model,
                     }
+            last_attempted_model = str(
+                provider_payload.get("model") or upstream_model or model_name
+            )
 
             try:
                 if is_stream:
@@ -942,6 +1003,7 @@ def create_app() -> FastAPI:
 
                     async def stream_wrapper(
                         selected_provider: str = provider_name,
+                        selected_model: str = last_attempted_model,
                     ):
                         stream_error: str | None = None
                         try:
@@ -955,7 +1017,8 @@ def create_app() -> FastAPI:
                             raise
                         finally:
                             await stream_handle.close()
-                            latency_ms = int((time.perf_counter() - started_at) * 1000)
+                            duration_seconds = time.perf_counter() - started_at
+                            latency_ms = int(duration_seconds * 1000)
                             await safe_insert_call_log(
                                 {
                                     "request_id": request_id,
@@ -980,6 +1043,13 @@ def create_app() -> FastAPI:
                                     "response_body": None,
                                 }
                             )
+                            _observe_gateway_call(
+                                route=model_name,
+                                provider=selected_provider,
+                                model=selected_model,
+                                outcome="failed" if stream_error else "success",
+                                duration_seconds=duration_seconds,
+                            )
 
                     return StreamingResponse(
                         stream_wrapper(), media_type="text/event-stream"
@@ -991,7 +1061,8 @@ def create_app() -> FastAPI:
                 prompt_tokens, completion_tokens, total_tokens = _extract_usage(
                     response_payload
                 )
-                latency_ms = int((time.perf_counter() - started_at) * 1000)
+                duration_seconds = time.perf_counter() - started_at
+                latency_ms = int(duration_seconds * 1000)
 
                 await safe_insert_call_log(
                     {
@@ -1021,6 +1092,15 @@ def create_app() -> FastAPI:
                         ),
                     }
                 )
+                _observe_gateway_call(
+                    route=model_name,
+                    provider=provider_name,
+                    model=last_attempted_model,
+                    outcome="success",
+                    duration_seconds=duration_seconds,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                )
 
                 return JSONResponse(response_payload)
             except ProviderConnectionError as exc:
@@ -1034,7 +1114,8 @@ def create_app() -> FastAPI:
                 errors.append(f"{provider_name}: {_format_provider_error(exc)}")
                 break
 
-        latency_ms = int((time.perf_counter() - started_at) * 1000)
+        duration_seconds = time.perf_counter() - started_at
+        latency_ms = int(duration_seconds * 1000)
         error_text = " | ".join(errors) if errors else "all providers failed"
 
         await safe_insert_call_log(
@@ -1058,6 +1139,13 @@ def create_app() -> FastAPI:
                 "request_body": payload if settings.audit_capture_bodies else None,
                 "response_body": None,
             }
+        )
+        _observe_gateway_call(
+            route=model_name,
+            provider=attempted_chain[-1] if attempted_chain else None,
+            model=last_attempted_model,
+            outcome="failed",
+            duration_seconds=duration_seconds,
         )
 
         raise HTTPException(
